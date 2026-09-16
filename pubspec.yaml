@@ -1,0 +1,35 @@
+name: mood_garden
+description: "心情花园 —— 每一种情绪都有价值：开心的事被温柔地收藏，不开心的事被温柔地转化。"
+publish_to: "none"
+
+# 版本号：语义化版本 + 构建号（build number）
+# 命名与最终产品名尚未定案（PRD 第 12 章待定项），当前沿用「心情花园」为临时代号。
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 中文本地化：日期选择器、长按菜单等系统级文案需要它才能显示中文
+  flutter_localizations:
+    sdk: flutter
+
+  # 状态管理：轻量、官方推荐的 ChangeNotifier 方案，适合骨架期快速铺开
+  provider: ^6.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # 手绘插画资源位（PRD 11.3：花园、花朵、纸卷、种子均采用手绘插画风格）
+  # 资源文件待设计团队产出后放入，目录已建好占位
+  assets:
+    - assets/illustrations/
+    - assets/animations/

@@ -1,0 +1,40 @@
+# 静态分析配置
+# 基于 flutter_lints 推荐规则集，并按本项目约定补充约束。
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - build/**
+    - android/**
+    - ios/**
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    # 骨架期存在大量 TODO 占位，避免其阻断构建
+    todo: ignore
+    missing_required_param: error
+    missing_return: error
+
+linter:
+  rules:
+    # Dart 不支持在命名参数上使用私有字段的 initializing formal
+    # （命名参数名不能以下划线开头），因此该规则在「命名参数 + 私有字段」
+    # 这一常见写法下属误报，此处关闭。
+    prefer_initializing_formals: false
+    # 一致性
+    prefer_single_quotes: true
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    prefer_final_locals: true
+    always_declare_return_types: true
+    # 可读性
+    require_trailing_commas: true
+    sort_child_properties_last: true
+    # 文档
+    slash_for_doc_comments: true
+    # 避免误用
+    avoid_print: true
+    use_build_context_synchronously: true
