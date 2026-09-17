@@ -107,7 +107,7 @@ void main() {
               plantedAt: now,
             ),
           ],
-          seedCountBySpecies: <String, int>{
+          petalStockBySpecies: <String, int>{
             FlowerSpeciesId.sunflower: 12,
             FlowerSpeciesId.tulip: 3,
           },

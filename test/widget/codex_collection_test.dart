@@ -11,6 +11,7 @@ import 'package:mood_garden/data/repositories/local_entry_repository.dart';
 import 'package:mood_garden/data/repositories/local_settings_repository.dart';
 import 'package:mood_garden/data/repositories/local_garden_repository.dart';
 import 'package:mood_garden/domain/repositories/sound_player.dart';
+import 'package:mood_garden/core/constants/app_constants.dart';
 import 'package:mood_garden/domain/entities/flower.dart';
 import 'package:mood_garden/domain/entities/flower_species.dart';
 import 'package:mood_garden/domain/entities/garden_state.dart';
@@ -99,7 +100,7 @@ void main() {
             plantedAt: now,
           ),
         ],
-        seedCountBySpecies: <String, int>{
+        petalStockBySpecies: <String, int>{
           FlowerSpeciesId.sunflower: 12,
           FlowerSpeciesId.tulip: 1,
           FlowerSpeciesId.clover: 1,
@@ -126,7 +127,7 @@ void main() {
     );
 
     // 未开花的花种显示收集进度，而不是「已开」
-    expect(find.text('已种 1 / 10 颗'), findsWidgets);
+    expect(find.text('已攒 1 / ${AppConstants.petalsPerBloom} 片花瓣'), findsWidgets);
   });
 
   testWidgets('时间推移到开花之后，已收集数量随之增加', (WidgetTester tester) async {

@@ -191,7 +191,7 @@ class SpeciesGrid extends StatelessWidget {
                 species: item,
                 bloomedCount:
                     controller.garden.bloomingCountOfSpecies(item.id, now),
-                seedCount: controller.garden.seedsOfSpecies(item.id),
+                petalCount: controller.garden.petalsOfSpecies(item.id),
                 now: now,
               ),
             );
@@ -210,13 +210,13 @@ class SpeciesTile extends StatelessWidget {
     super.key,
     required this.species,
     required this.bloomedCount,
-    required this.seedCount,
+    required this.petalCount,
     required this.now,
   });
 
   final FlowerSpecies species;
   final int bloomedCount;
-  final int seedCount;
+  final int petalCount;
   final DateTime now;
 
   @override
@@ -276,7 +276,7 @@ class SpeciesTile extends StatelessWidget {
             )
           else
             Text(
-              '已种 $seedCount / ${AppConstants.seedsPerBloom} 颗',
+              '已攒 $petalCount / ${AppConstants.petalsPerBloom} 片花瓣',
               style: textTheme.labelSmall,
             ),
           const SizedBox(height: 12),
@@ -289,8 +289,8 @@ class SpeciesTile extends StatelessWidget {
                 FractionallySizedBox(
                   widthFactor: collected
                       ? 1.0
-                      : (seedCount % AppConstants.seedsPerBloom) /
-                          AppConstants.seedsPerBloom,
+                      : (petalCount % AppConstants.petalsPerBloom) /
+                          AppConstants.petalsPerBloom,
                   child: Container(
                     height: 5,
                     color: collected

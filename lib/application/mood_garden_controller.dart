@@ -22,35 +22,56 @@ import '../domain/repositories/garden_repository.dart';
 class PlantSeedResult {
   const PlantSeedResult({
     required this.entry,
-    required this.flower,
     required this.species,
-    required this.totalSeedsOfSpecies,
-    required this.seedsUntilNextBloom,
+    required this.petalEarned,
+    required this.petalStock,
+    required this.thingsTowardPetal,
+    required this.budProgress,
+    required this.petalsUntilBloom,
     required this.nutrientGained,
+    this.flower,
+    this.bloomedSpecies,
     this.unlockedSpecies = const <FlowerSpecies>[],
   });
 
   /// 新写入的开心事记录。
   final HappyEntry entry;
 
-  /// 新入土的植物。
-  final Flower flower;
-
-  /// 该记录对应的花种。
+  /// 这条记录对应的花种（由标签决定）。
   final FlowerSpecies species;
 
-  /// 该花种累计已种下的种子总数。
-  final int totalSeedsOfSpecies;
+  /// 本次是否收获了一片花瓣。
+  ///
+  /// 原型的规则是**一天集齐 3 件**才产出一片，所以多数记录并不会立刻得到花瓣。
+  /// 界面据此决定给哪种反馈：小确幸 / 花瓣 / 绽放。
+  final bool petalEarned;
 
-  /// 距离下一个收集里程碑还差几颗种子。
-  final int seedsUntilNextBloom;
+  /// 该花种已攒下的花瓣数。
+  final int petalStock;
 
-  /// 本次记录为花园带来的养分值增量。
+  /// 当天已记下几件小事（0 ~ thingsPerPetal）。
+  final int thingsTowardPetal;
+
+  /// 下一次收获花瓣还差几件小事。
+  int get thingsUntilPetal =>
+      AppConstants.thingsPerPetal - thingsTowardPetal;
+
+  /// 花苞上已点亮的花瓣数（0 ~ petalsPerBloom-1）。
+  final int budProgress;
+
+  /// 距离下一次绽放还差几片花瓣。
+  final int petalsUntilBloom;
+
+  /// 本次记录带来的养分增量。只有真正产出花瓣时才是正数。
   final int nutrientGained;
 
+  /// 本次**恰好绽放**的那朵花。为空表示这次没有开花。
+  final Flower? flower;
+
+  /// 绽放的那朵花的花种。与 [flower] 同时为空或同时有值。
+  final FlowerSpecies? bloomedSpecies;
+
   /// 本次记录**恰好解锁**的进化花种（PRD 7.1.3）。
-  ///
-  /// 界面据此给一次额外的正反馈；为空表示这次没有新解锁。
   final List<FlowerSpecies> unlockedSpecies;
 }
 
@@ -252,40 +273,99 @@ class MoodGardenController extends ChangeNotifier {
 
     await _entryRepository.save(entry);
 
-    // 新植物以记录归属时间为种下时间，保证补记的记录不会「一入土就开花」。
-    final flower = Flower(
-      id: IdGenerator.next('flower'),
-      speciesId: resolvedSpeciesId,
-      plantedAt: entry.occurredAt,
-      nutrientBoost: _garden.nutrientValue,
-    );
+    // ---------------------------------------------------------------------
+    // 原型 v5 的按天聚合规则
+    //
+    // 不是「记 1 件得 1 片花瓣」，而是**一天集齐 3 件**才收获一片；
+    // 这片花瓣的花种 = 当天用得最多的那个标签。
+    //
+    // 计数器跟着**记录归属的那一天**走。若只按「今天」算，
+    // 补记上周三的三件小事就永远攒不到花瓣——而补记是 PRD 7.1.1 明写的功能。
+    // ---------------------------------------------------------------------
+    final day = entry.occurredDay;
+    final sameDay = _garden.petalProgressDay == day;
 
-    final nextSeedCounts = Map<String, int>.of(_garden.seedCountBySpecies);
-    final totalSeeds = (nextSeedCounts[resolvedSpeciesId] ?? 0) + 1;
-    nextSeedCounts[resolvedSpeciesId] = totalSeeds;
+    final tagCounts = <String, int>{
+      if (sameDay) ..._garden.tagCountsForDay,
+    };
+    tagCounts[tagId] = (tagCounts[tagId] ?? 0) + 1;
+
+    final things = (sameDay ? _garden.thingsTowardPetal : 0) + 1;
+
+    final petalStock = Map<String, int>.of(_garden.petalStockBySpecies);
+    var nutrientGained = 0;
+    var petalEarned = false;
+    var thingsTowardPetal = things;
+    var dayTagCounts = tagCounts;
+    Flower? bloomed;
+    FlowerSpecies? bloomedSpecies;
+
+    if (things >= AppConstants.thingsPerPetal) {
+      // 这一片花瓣归给当天出现最多的标签。
+      var dominantTag = tagId;
+      var best = -1;
+      for (final e in tagCounts.entries) {
+        if (e.value > best) {
+          best = e.value;
+          dominantTag = e.key;
+        }
+      }
+
+      final petalSpeciesId = resolveTag(dominantTag).speciesId;
+      petalStock[petalSpeciesId] = (petalStock[petalSpeciesId] ?? 0) + 1;
+      petalEarned = true;
+      nutrientGained = AppConstants.nutrientPerPetal;
+
+      // 花瓣归零，开始攒下一个花苞。
+      thingsTowardPetal = 0;
+      dayTagCounts = <String, int>{};
+
+      // 花苞攒满 → 一朵花绽放。
+      final totalPetals =
+          petalStock.values.fold(0, (int sum, int count) => sum + count);
+      if (totalPetals % AppConstants.petalsPerBloom == 0) {
+        bloomed = Flower(
+          id: IdGenerator.next('flower'),
+          speciesId: petalSpeciesId,
+          plantedAt: entry.occurredAt,
+          nutrientBoost: _garden.nutrientValue,
+        );
+        bloomedSpecies = FlowerSpecies.byId(petalSpeciesId);
+      }
+    }
 
     // PRD 7.1.3：同类标签攒够阈值 → 解锁进化花种。
     // 判定放在这里而不是界面，是为了保证「解锁」与「这一次记录」是同一个事务，
     // 不会因为界面没刷新而漏掉。
     final unlocked = Set<String>.of(_garden.unlockedSpeciesIds);
     final newlyUnlocked = <FlowerSpecies>[];
+    // 按「同类标签的记录条数」算，不是按花瓣数——PRD 7.1.3 的原话是
+    // 「同类标签累积 N 条记录」。按花瓣算会让门槛从 30 条悄悄变成 90 条。
+    final tagRecordCount = _entries
+            .whereType<HappyEntry>()
+            .where((e) => e.tagId == tagId)
+            .length +
+        1; // +1 是这一条刚写进去的
     for (final evolved in FlowerSpecies.evolvedFrom(resolvedSpeciesId)) {
       if (!unlocked.contains(evolved.id) &&
-          totalSeeds >= AppConstants.evolutionUnlockCount) {
+          tagRecordCount >= AppConstants.evolutionUnlockCount) {
         unlocked.add(evolved.id);
         newlyUnlocked.add(evolved);
       }
     }
 
-    const nutrientGained = AppConstants.nutrientPerSeed;
-
     _garden = _garden.copyWith(
       nutrientValue: _garden.nutrientValue + nutrientGained,
-      seedCountBySpecies: nextSeedCounts,
+      petalStockBySpecies: petalStock,
+      petalProgressDay: day,
+      thingsTowardPetal: thingsTowardPetal,
+      tagCountsForDay: dayTagCounts,
       unlockedSpeciesIds: unlocked,
-      flowers: <Flower>[..._garden.flowers, flower],
-      streakDays: _nextStreak(entry.occurredDay),
-      lastRecordedDay: _laterDay(_garden.lastRecordedDay, entry.occurredDay),
+      flowers: bloomed == null
+          ? _garden.flowers
+          : <Flower>[..._garden.flowers, bloomed],
+      streakDays: _nextStreak(day),
+      lastRecordedDay: _laterDay(_garden.lastRecordedDay, day),
     );
 
     await _gardenRepository.save(_garden);
@@ -294,11 +374,14 @@ class MoodGardenController extends ChangeNotifier {
 
     return PlantSeedResult(
       entry: entry,
-      flower: flower,
+      flower: bloomed,
       species: FlowerSpecies.byId(resolvedSpeciesId) ?? FlowerSpecies.sunflower,
-      totalSeedsOfSpecies: totalSeeds,
-      seedsUntilNextBloom:
-          AppConstants.seedsPerBloom - (totalSeeds % AppConstants.seedsPerBloom),
+      bloomedSpecies: bloomedSpecies,
+      petalEarned: petalEarned,
+      petalStock: petalStock[resolvedSpeciesId] ?? 0,
+      thingsTowardPetal: _garden.thingsTowardPetal,
+      budProgress: _garden.budProgress,
+      petalsUntilBloom: _garden.petalsUntilBloom,
       nutrientGained: nutrientGained,
       unlockedSpecies: newlyUnlocked,
     );

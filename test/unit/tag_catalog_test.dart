@@ -24,7 +24,7 @@ void main() {
   }) {
     return GardenState(
       streakDays: streak,
-      seedCountBySpecies: seeds,
+      petalStockBySpecies: seeds,
       unlockedSpeciesIds: unlocked,
       flowers: flowers,
     );

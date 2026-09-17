@@ -200,7 +200,7 @@ abstract final class TagCatalog {
 
   /// 某个基础花种还差几条记录解锁进化款。
   static int recordsToEvolution(GardenState garden, String baseSpeciesId) {
-    final current = garden.seedsOfSpecies(baseSpeciesId);
+    final current = garden.petalsOfSpecies(baseSpeciesId);
     final remaining = AppConstants.evolutionUnlockCount - current;
     return remaining <= 0 ? 0 : remaining;
   }

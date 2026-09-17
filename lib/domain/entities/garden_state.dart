@@ -21,7 +21,10 @@ class GardenState {
     this.nutrientValue = 0,
     this.streakDays = 0,
     this.flowers = const <Flower>[],
-    this.seedCountBySpecies = const <String, int>{},
+    this.petalStockBySpecies = const <String, int>{},
+    this.petalProgressDay,
+    this.thingsTowardPetal = 0,
+    this.tagCountsForDay = const <String, int>{},
     this.unlockedSpeciesIds = const <String>{},
     this.themeId = GardenThemeId.sunflowerField,
     this.lastRecordedDay,
@@ -43,10 +46,25 @@ class GardenState {
   /// 花园中已种下的所有花朵。
   final List<Flower> flowers;
 
-  /// 各花种当前累积的种子数（尚未凑够开花的阈值）。
+  /// 各花种已攒下的花瓣数（原型 v5：各花种花瓣）。
   ///
-  /// key 为花种 id，value 为种子颗数。
-  final Map<String, int> seedCountBySpecies;
+  /// key 为花种 id，value 为花瓣片数。
+  final Map<String, int> petalStockBySpecies;
+
+  /// 下面三个字段共同实现原型 v5 的**按天聚合**规则：
+  /// 一天集齐 [AppConstants.thingsPerPetal] 件小事，才收获一片花瓣；
+  /// 这片花瓣的花种 = 当天用得最多的那个标签。
+  ///
+  /// 计数器跟着**记录归属的那一天**走，而不是跟着「今天」走——
+  /// 否则补记上周三的三件小事将永远攒不到花瓣。
+  /// 三个字段要么一起有效，要么一起为空。
+  final DateTime? petalProgressDay;
+
+  /// [petalProgressDay] 这一天已经记下了几件小事（0 起步，满 3 归零）。
+  final int thingsTowardPetal;
+
+  /// [petalProgressDay] 这一天各标签出现的次数，用于判定花瓣归属。
+  final Map<String, int> tagCountsForDay;
 
   /// 已解锁的进阶花种 id（PRD 7.1.3 的进化花种）。
   ///
@@ -129,21 +147,36 @@ class GardenState {
           .where((f) => f.speciesId == speciesId && f.isBloomingAt(now))
           .length;
 
-  /// 指定花种当前的种子数。
-  int seedsOfSpecies(String speciesId) => seedCountBySpecies[speciesId] ?? 0;
+  /// 指定花种已攒下的花瓣数。
+  int petalsOfSpecies(String speciesId) => petalStockBySpecies[speciesId] ?? 0;
 
-  /// 指定花种再种几颗种子能开出下一朵花（PRD 7.1.2 的收集进度提示）。
+  /// 已攒下的花瓣总数。
+  int get totalPetals =>
+      petalStockBySpecies.values.fold(0, (sum, count) => sum + count);
+
+  /// 当前花苞上已点亮的花瓣数（`0 ~ petalsPerBloom-1`）。
   ///
-  /// 对应首页提示文案示例：「向日葵第 7 颗种子，再种 3 颗会长出第一朵花」。
-  int seedsUntilNextBloom(String speciesId) {
-    final current = seedsOfSpecies(speciesId) % AppConstants.seedsPerBloom;
-    return AppConstants.seedsPerBloom - current;
+  /// 花苞**跨花种**拼合：任何花种的花瓣都往同一个花苞上添，
+  /// 这与原型 `petalCount % PETALS_PER_FLOWER` 的算法一致。
+  int get budProgress => totalPetals % AppConstants.petalsPerBloom;
+
+  /// 距离下一次绽放还差几片花瓣。
+  int get petalsUntilBloom => AppConstants.petalsPerBloom - budProgress;
+
+  /// 指定花种距离下一片花瓣还差几件小事。
+  ///
+  /// 注意这是**按天**的：花瓣由「当天记满 3 件」产出。
+  int thingsUntilNextPetal(String speciesId) {
+    final done = petalProgressDay == null ? 0 : thingsTowardPetal;
+    return AppConstants.thingsPerPetal - done;
   }
 
-  /// 指定花种当前的收集进度，范围 `0.0 ~ 1.0`。
+  /// 指定花种的花瓣存量进度，范围 `0.0 ~ 1.0`（用于「各花种花瓣」的进度条）。
+  ///
+  /// 以 5 片为一个花苞周期取余，因为攒满 5 片就会绽放并清零重新计。
   double speciesProgress(String speciesId) {
-    final current = seedsOfSpecies(speciesId) % AppConstants.seedsPerBloom;
-    return current / AppConstants.seedsPerBloom;
+    final current = petalsOfSpecies(speciesId) % AppConstants.petalsPerBloom;
+    return current / AppConstants.petalsPerBloom;
   }
 
   /// 指定时刻已收集的花种数量（至少开出过一朵花），用于图鉴收集度（PRD Tab3）。
@@ -225,7 +258,10 @@ class GardenState {
     int? nutrientValue,
     int? streakDays,
     List<Flower>? flowers,
-    Map<String, int>? seedCountBySpecies,
+    Map<String, int>? petalStockBySpecies,
+    DateTime? petalProgressDay,
+    int? thingsTowardPetal,
+    Map<String, int>? tagCountsForDay,
     Set<String>? unlockedSpeciesIds,
     String? themeId,
     DateTime? lastRecordedDay,
@@ -234,7 +270,10 @@ class GardenState {
       nutrientValue: nutrientValue ?? this.nutrientValue,
       streakDays: streakDays ?? this.streakDays,
       flowers: flowers ?? this.flowers,
-      seedCountBySpecies: seedCountBySpecies ?? this.seedCountBySpecies,
+      petalStockBySpecies: petalStockBySpecies ?? this.petalStockBySpecies,
+      petalProgressDay: petalProgressDay ?? this.petalProgressDay,
+      thingsTowardPetal: thingsTowardPetal ?? this.thingsTowardPetal,
+      tagCountsForDay: tagCountsForDay ?? this.tagCountsForDay,
       unlockedSpeciesIds: unlockedSpeciesIds ?? this.unlockedSpeciesIds,
       themeId: themeId ?? this.themeId,
       lastRecordedDay: lastRecordedDay ?? this.lastRecordedDay,

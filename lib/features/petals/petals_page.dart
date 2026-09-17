@@ -270,7 +270,7 @@ class _SpeciesProgress extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final seeded = <FlowerSpecies>[
       for (final species in FlowerSpecies.catalog)
-        if (garden.seedsOfSpecies(species.id) > 0) species,
+        if (garden.petalsOfSpecies(species.id) > 0) species,
     ];
 
     if (seeded.isEmpty) {
@@ -289,7 +289,7 @@ class _SpeciesProgress extends StatelessWidget {
             if (i > 0) const SizedBox(height: 14),
             _SpeciesRow(
               species: seeded[i],
-              seeds: garden.seedsOfSpecies(seeded[i].id),
+              seeds: garden.petalsOfSpecies(seeded[i].id),
             ),
           ],
         ],
@@ -308,8 +308,8 @@ class _SpeciesRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final inBloom = seeds ~/ AppConstants.seedsPerBloom;
-    final into = seeds % AppConstants.seedsPerBloom;
+    final inBloom = seeds ~/ AppConstants.petalsPerBloom;
+    final into = seeds % AppConstants.petalsPerBloom;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -322,7 +322,7 @@ class _SpeciesRow extends StatelessWidget {
               child: Text(species.name, style: textTheme.titleMedium),
             ),
             Text(
-              inBloom > 0 ? '已绽放 $inBloom 朵' : '还差 ${AppConstants.seedsPerBloom - into} 颗',
+              inBloom > 0 ? '已绽放 $inBloom 朵' : '还差 ${AppConstants.petalsPerBloom - into} 颗',
               style: textTheme.labelSmall,
             ),
           ],
@@ -331,7 +331,7 @@ class _SpeciesRow extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
           child: LinearProgressIndicator(
-            value: into / AppConstants.seedsPerBloom,
+            value: into / AppConstants.petalsPerBloom,
             minHeight: 5,
             backgroundColor: AppColors.creamDeep,
             valueColor: const AlwaysStoppedAnimation<Color>(

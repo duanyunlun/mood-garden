@@ -7,6 +7,7 @@ import 'package:mood_garden/data/datasources/encrypted_image_store.dart';
 import 'package:mood_garden/data/datasources/local_store.dart';
 import 'package:mood_garden/data/repositories/local_entry_repository.dart';
 import 'package:mood_garden/data/repositories/local_garden_repository.dart';
+import 'package:mood_garden/domain/entities/flower.dart';
 import 'package:mood_garden/domain/entities/flower_species.dart';
 import 'package:mood_garden/domain/entities/garden_state.dart';
 import 'package:mood_garden/domain/entities/garden_theme.dart';
@@ -43,7 +44,7 @@ void main() {
   });
 
   group('PRD 7.1 开心事记录 → 种花机制', () {
-    test('种下一件开心事：写入记录、种下植物、增加养分', () async {
+    test('记下一件小事：落库、计入当天进度，但还不产出花瓣', () async {
       final result = await controller.plantSeed(
         tagId: MoodTagId.gratitude,
         text: '路上遇到一只很亲人的橘猫',
@@ -53,70 +54,114 @@ void main() {
       expect(controller.entries, hasLength(1));
       expect(controller.entries.first, isA<HappyEntry>());
 
-      // 植物入土
-      expect(controller.garden.flowers, hasLength(1));
-      expect(result.flower.speciesId, FlowerSpeciesId.sunflower);
+      // 原型 v5 的规则：一天要记满 3 件才产出一片花瓣，
+      // 所以第 1 件不产花瓣、不加养分、也不往花园里放植物。
+      expect(result.petalEarned, isFalse);
+      expect(result.petalStock, 0);
+      expect(result.thingsUntilPetal, AppConstants.thingsPerPetal - 1);
+      expect(result.nutrientGained, 0);
+      expect(controller.garden.nutrientValue, 0);
+      expect(controller.garden.flowers, isEmpty);
       expect(result.species.name, '向日葵');
-
-      // 养分增加（PRD 7.3 正向路径）
-      expect(controller.garden.nutrientValue, AppConstants.nutrientPerSeed);
-      expect(result.nutrientGained, AppConstants.nutrientPerSeed);
     });
 
-    test('标签决定花种（PRD 7.1.1 步骤 3）', () async {
-      await controller.plantSeed(tagId: MoodTagId.surprise, text: '收到意外的礼物');
-      expect(controller.garden.flowers.first.speciesId, FlowerSpeciesId.tulip);
-
-      await controller.plantSeed(tagId: MoodTagId.calm, text: '下午很安静');
-      expect(controller.garden.flowers.last.speciesId, FlowerSpeciesId.clover);
-    });
-
-    test('收集进度提示符合 PRD 7.1.2 示例文案的语义', () async {
-      // 第 1 颗种子：再种 9 颗
-      final first = await controller.plantSeed(
-        tagId: MoodTagId.gratitude,
-        text: '第 1 件',
-      );
-      expect(first.totalSeedsOfSpecies, 1);
-      expect(first.seedsUntilNextBloom, 9);
-
-      // 累积到第 7 颗时应为「再种 3 颗」，与 PRD 示例一致
-      for (var i = 2; i <= 7; i++) {
-        await controller.plantSeed(
+    test('一天记满 3 件才收获一片花瓣，并加养分', () async {
+      for (var i = 1; i <= AppConstants.thingsPerPetal; i++) {
+        final r = await controller.plantSeed(
           tagId: MoodTagId.gratitude,
           text: '第 $i 件',
         );
+        if (i < AppConstants.thingsPerPetal) {
+          expect(r.petalEarned, isFalse, reason: '第 $i 件不该产出花瓣');
+        } else {
+          expect(r.petalEarned, isTrue, reason: '第 3 件应当产出花瓣');
+          expect(r.petalStock, 1);
+          expect(r.nutrientGained, AppConstants.nutrientPerPetal);
+        }
       }
-      expect(controller.garden.seedsOfSpecies(FlowerSpeciesId.sunflower), 7);
-      expect(
-        controller.garden.seedsUntilNextBloom(FlowerSpeciesId.sunflower),
-        3,
-        reason: 'PRD 示例：向日葵第 7 颗种子，再种 3 颗会长出第一朵花',
+
+      expect(controller.garden.petalsOfSpecies(FlowerSpeciesId.sunflower), 1);
+      expect(controller.garden.nutrientValue, AppConstants.nutrientPerPetal);
+      // 花瓣归零，开始攒下一个花苞
+      expect(controller.garden.thingsTowardPetal, 0);
+    });
+
+    test('花瓣的花种由当天用得最多的标签决定（原型 plantSeed）', () async {
+      // 感恩 2 件 + 惊喜 1 件 → 这一片花瓣属于「感恩」（当天最多）
+      await controller.plantSeed(tagId: MoodTagId.gratitude, text: 'a');
+      await controller.plantSeed(tagId: MoodTagId.gratitude, text: 'b');
+      final third = await controller.plantSeed(
+        tagId: MoodTagId.surprise,
+        text: 'c',
       );
+
+      expect(third.petalEarned, isTrue);
+      expect(
+        controller.garden.petalsOfSpecies(FlowerSpeciesId.sunflower),
+        1,
+        reason: '感恩当天出现最多，花瓣应归给向日葵',
+      );
+      expect(
+        controller.garden.petalsOfSpecies(FlowerSpeciesId.tulip),
+        0,
+        reason: '惊喜只出现一次，不该拿到这片花瓣',
+      );
+    });
+
+    test('攒满 5 片花瓣开出一朵花（原型 PETALS_PER_FLOWER）', () async {
+      Flower? bloomed;
+      FlowerSpecies? bloomedSpecies;
+
+      // 每 3 件产出一片花瓣，攒满 5 片需要 15 件
+      const need = AppConstants.petalsPerBloom * AppConstants.thingsPerPetal;
+      for (var i = 1; i <= need; i++) {
+        final r = await controller.plantSeed(
+          tagId: MoodTagId.gratitude,
+          text: '第 $i 件',
+        );
+        if (r.flower != null) {
+          bloomed = r.flower;
+          bloomedSpecies = r.bloomedSpecies;
+        }
+      }
+
+      expect(controller.garden.petalsOfSpecies(FlowerSpeciesId.sunflower),
+          AppConstants.petalsPerBloom);
+      expect(bloomed, isNotNull, reason: '攒满 5 片应当开出一朵花');
+      expect(bloomedSpecies?.id, FlowerSpeciesId.sunflower);
+      expect(controller.garden.flowers, hasLength(1));
+      expect(controller.garden.budProgress, 0, reason: '开花后花苞重新开始攒');
     });
 
     test('不同花种的收集进度互相独立', () async {
-      await controller.plantSeed(tagId: MoodTagId.gratitude, text: 'a');
-      await controller.plantSeed(tagId: MoodTagId.gratitude, text: 'b');
-      await controller.plantSeed(tagId: MoodTagId.surprise, text: 'c');
-
-      expect(controller.garden.seedsOfSpecies(FlowerSpeciesId.sunflower), 2);
-      expect(controller.garden.seedsOfSpecies(FlowerSpeciesId.tulip), 1);
-      expect(controller.garden.seedsOfSpecies(FlowerSpeciesId.clover), 0);
+      // 每个花种各自攒花瓣：感恩记满 3 件得 1 片向日葵花瓣，
+      // 平静的计数不受影响。
+      for (var i = 1; i <= AppConstants.thingsPerPetal; i++) {
+        await controller.plantSeed(tagId: MoodTagId.gratitude, text: 'g$i');
+      }
+      expect(controller.garden.petalsOfSpecies(FlowerSpeciesId.sunflower), 1);
+      expect(controller.garden.petalsOfSpecies(FlowerSpeciesId.clover), 0);
     });
 
-    test('补记过去的日期：植物以归属时间为种下时间，不会「一入土就开花」', () async {
+    test('补记过去的日期：花瓣按记录归属的那一天聚合', () async {
       final tenDaysAgo = DateTime.now().subtract(const Duration(days: 10));
-      final result = await controller.plantSeed(
-        tagId: MoodTagId.gratitude,
-        text: '想起十年前的今天',
-        occurredAt: tenDaysAgo,
-      );
 
-      expect(result.entry.isBackfilled, isTrue);
-      expect(result.flower.plantedAt, tenDaysAgo);
-      // 十天后状态是开花，因为「时间已经流逝」——这正是活地图心智
-      expect(result.flower.isBloomingAt(DateTime.now()), isTrue);
+      // 补记上周的三件小事，同样应当攒够一片花瓣——
+      // 计数器跟着记录归属的那一天走，而不是跟着「今天」。
+      for (var i = 1; i <= AppConstants.thingsPerPetal; i++) {
+        await controller.plantSeed(
+          tagId: MoodTagId.gratitude,
+          text: '十天前第 $i 件',
+          occurredAt: tenDaysAgo,
+        );
+      }
+
+      expect(controller.garden.petalsOfSpecies(FlowerSpeciesId.sunflower), 1);
+      expect(controller.garden.petalProgressDay, DateTime(
+        tenDaysAgo.year,
+        tenDaysAgo.month,
+        tenDaysAgo.day,
+      ));
     });
 
     test('今日种下数量统计正确', () async {
@@ -331,21 +376,24 @@ void main() {
 
   group('PRD 7.3 花园养分系统：两条路径汇入同一养分池', () {
     test('种花与烧灰的养分累加（正负情绪协同滋养同一片花园）', () async {
-      await controller.plantSeed(tagId: MoodTagId.gratitude, text: '开心事');
+      // 正向路径要记满 3 件才产出一片花瓣，也才带来养分。
+      for (var i = 1; i <= AppConstants.thingsPerPetal; i++) {
+        await controller.plantSeed(tagId: MoodTagId.gratitude, text: '开心事 $i');
+      }
 
       final draft = await controller.saveScrollDraft(text: '不开心事');
       await controller.burnScroll(draft);
 
       expect(
         controller.garden.nutrientValue,
-        AppConstants.nutrientPerSeed + AppConstants.nutrientPerAsh,
+        AppConstants.nutrientPerPetal + AppConstants.nutrientPerAsh,
       );
     });
 
     test('负向转化带来的养分不低于正向记录（PRD 7.2.3 价值观）', () {
       expect(
         AppConstants.nutrientPerAsh,
-        greaterThanOrEqualTo(AppConstants.nutrientPerSeed),
+        greaterThanOrEqualTo(AppConstants.nutrientPerPetal),
         reason: '不应对负向情绪做任何数值上的贬抑',
       );
     });
@@ -354,10 +402,14 @@ void main() {
       expect(controller.garden.nutrientProgress, 0);
       expect(controller.garden.vitalityLabel, '静待播种');
 
-      for (var i = 0; i < 40; i++) {
+      // 养分跟着花瓣走，而花瓣要每 3 件小事才产出 1 片；
+      // 想让活力描述跳出「静待播种」，记录数必须按这个比例给足。
+      const records = 60; // → 20 片花瓣 → 200 养分 → 越过 15% 档位
+      for (var i = 0; i < records; i++) {
         await controller.plantSeed(tagId: MoodTagId.gratitude, text: '$i');
       }
 
+      expect(controller.garden.totalPetals, records ~/ AppConstants.thingsPerPetal);
       expect(controller.garden.nutrientProgress, greaterThan(0));
       expect(controller.garden.vitalityLabel, isNot('静待播种'));
     });
@@ -496,17 +548,18 @@ void main() {
     });
 
     test('生长阶段分布统计', () async {
-      await controller.plantSeed(
-        tagId: MoodTagId.calm,
-        text: '刚种下',
-        occurredAt: DateTime.now(),
-      );
-      await controller.plantSeed(
-        tagId: MoodTagId.calm,
-        text: '十天前种的',
-        occurredAt: DateTime.now().subtract(const Duration(days: 10)),
-      );
+      // 花在攒满 5 片花瓣时绽放，攒够 2 朵需要 30 件小事。
+      // 归到同一天，确保花瓣都产出来。
+      final day = DateTime.now().subtract(const Duration(days: 10));
+      for (var i = 0; i < AppConstants.petalsPerBloom * AppConstants.thingsPerPetal * 2; i++) {
+        await controller.plantSeed(
+          tagId: MoodTagId.calm,
+          text: '第 $i 件',
+          occurredAt: day,
+        );
+      }
 
+      expect(controller.garden.flowers, hasLength(2));
       final distribution = controller.stageDistribution();
       expect(distribution.values.reduce((a, b) => a + b), 2);
     });
@@ -554,11 +607,10 @@ void main() {
         text: '进化形态',
       );
       expect(planted.species.id, FlowerSpeciesId.goldenSunflower);
-      expect(
-        controller.garden.flowers
-            .where((f) => f.speciesId == FlowerSpeciesId.goldenSunflower),
-        hasLength(1),
-      );
+      // 花只在攒满花瓣时绽放，所以这里验证的是「这片花瓣归到了进化花种名下」，
+      // 而不是「立刻长出一株植物」。
+      expect(planted.petalEarned, isFalse, reason: '单条记录不产出花瓣');
+      expect(planted.species.id, FlowerSpeciesId.goldenSunflower);
     });
 
     test('隐藏款：连续记录达标后可以种月光花', () async {

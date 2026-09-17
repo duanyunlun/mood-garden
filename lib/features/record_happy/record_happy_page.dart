@@ -168,18 +168,19 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(
-              result.species.emoji,
+              result.flower != null
+                  ? (result.bloomedSpecies?.emoji ?? result.species.emoji)
+                  : (result.petalEarned ? '🌸' : result.species.emoji),
               style: const TextStyle(fontSize: 46),
             ),
             const SizedBox(height: 14),
             Text(
-              unlocked.isEmpty ? '种子已经入土' : '它进化了',
+              _feedbackTitle(result, unlocked.isNotEmpty),
               style: Theme.of(dialogContext).textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
             Text(
-              '${result.species.name}第 ${result.totalSeedsOfSpecies} 颗种子，'
-              '再种 ${result.seedsUntilNextBloom} 颗会长出下一朵花',
+              _feedbackDetail(result),
               textAlign: TextAlign.center,
               style: Theme.of(dialogContext).textTheme.bodyMedium,
             ),
@@ -407,3 +408,34 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
   }
 }
 
+/// 反馈标题。对应原型记录流程的三种结果：小确幸 / 花瓣 / 绽放。
+///
+/// 一次记录只会有三种结局之一，且**大多数记录属于第一种**——
+/// 按原型的规则，一天要记满 3 件才产出一片花瓣。
+/// 因此这里绝不能把「没得到花瓣」写成遗憾的口气。
+String _feedbackTitle(PlantSeedResult result, bool evolved) {
+  if (evolved) {
+    return '它进化了';
+  }
+  if (result.flower != null) {
+    return '开出了一朵花';
+  }
+  if (result.petalEarned) {
+    return '收获了一片花瓣';
+  }
+  return '记下了一件小确幸';
+}
+
+/// 反馈正文。始终告诉用户**下一步还差多少**，而不是只报一个结果。
+String _feedbackDetail(PlantSeedResult result) {
+  if (result.flower != null) {
+    final name = result.bloomedSpecies?.name ?? result.species.name;
+    return '$name 绽放了。花苞重新开始攒，再攒 '
+        '${AppConstants.petalsPerBloom} 片又是一朵。';
+  }
+  if (result.petalEarned) {
+    return '花苞拼合 ${result.budProgress}/${AppConstants.petalsPerBloom} · '
+        '再攒 ${result.petalsUntilBloom} 片，就拼成一朵花';
+  }
+  return '再记 ${result.thingsUntilPetal} 件，今天就能收获一片花瓣';
+}

@@ -8,7 +8,10 @@ abstract final class GardenStateCodec {
   static const String _nutrientKey = 'nutrientValue';
   static const String _streakKey = 'streakDays';
   static const String _flowersKey = 'flowers';
-  static const String _seedCountKey = 'seedCountBySpecies';
+  static const String _petalStockKey = 'petalStockBySpecies';
+  static const String _petalDayKey = 'petalProgressDay';
+  static const String _thingsKey = 'thingsTowardPetal';
+  static const String _tagCountsKey = 'tagCountsForDay';
   static const String _unlockedSpeciesKey = 'unlockedSpeciesIds';
   static const String _themeKey = 'themeId';
   static const String _lastRecordedKey = 'lastRecordedDay';
@@ -18,7 +21,10 @@ abstract final class GardenStateCodec {
       _nutrientKey: state.nutrientValue,
       _streakKey: state.streakDays,
       _flowersKey: state.flowers.map(_flowerToMap).toList(growable: false),
-      _seedCountKey: state.seedCountBySpecies,
+      _petalStockKey: state.petalStockBySpecies,
+      _petalDayKey: state.petalProgressDay?.toIso8601String(),
+      _thingsKey: state.thingsTowardPetal,
+      _tagCountsKey: state.tagCountsForDay,
       _unlockedSpeciesKey: state.unlockedSpeciesIds.toList(growable: false),
       _themeKey: state.themeId,
       _lastRecordedKey: state.lastRecordedDay?.toIso8601String(),
@@ -30,7 +36,10 @@ abstract final class GardenStateCodec {
       nutrientValue: _asInt(map[_nutrientKey]),
       streakDays: _asInt(map[_streakKey]),
       flowers: _decodeFlowers(map[_flowersKey]),
-      seedCountBySpecies: _decodeSeedCounts(map[_seedCountKey]),
+      petalStockBySpecies: _decodeSeedCounts(map[_petalStockKey]),
+      petalProgressDay: _decodeDay(map[_petalDayKey]),
+      thingsTowardPetal: _asInt(map[_thingsKey]),
+      tagCountsForDay: _decodeSeedCounts(map[_tagCountsKey]),
       unlockedSpeciesIds: _decodeUnlockedSpecies(map[_unlockedSpeciesKey]),
       themeId: map[_themeKey] as String? ?? GardenState.empty.themeId,
       lastRecordedDay: _decodeDay(map[_lastRecordedKey]),

@@ -105,10 +105,10 @@ class FlowerSpecies {
     description: '安静地开成一片，是长久陪伴才有的样子。',
   );
 
-  /// 麦穗 —— 对应「成就」标签。
+  /// 成就麦穗 —— 对应「成就」标签。
   static const FlowerSpecies wheat = FlowerSpecies(
     id: FlowerSpeciesId.wheat,
-    name: '麦穗',
+    name: '成就麦穗',
     emoji: '🌾',
     rarity: SpeciesRarity.common,
     blossomColor: '麦金',
@@ -126,10 +126,10 @@ class FlowerSpecies {
     description: '只在春天开放的限定款。错过就要再等一年。',
   );
 
-  /// 幸运草 —— 对应「平静」标签。
+  /// 四叶草 —— 对应「平静」标签。
   static const FlowerSpecies clover = FlowerSpecies(
     id: FlowerSpeciesId.clover,
-    name: '幸运草',
+    name: '四叶草',
     emoji: '🍀',
     rarity: SpeciesRarity.common,
     blossomColor: '鼠尾草绿',

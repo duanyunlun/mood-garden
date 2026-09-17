@@ -123,7 +123,7 @@ void main() {
         nutrientValue: 125,
         streakDays: 7,
         themeId: GardenThemeId.lavenderSlope,
-        seedCountBySpecies: const <String, int>{
+        petalStockBySpecies: const <String, int>{
           FlowerSpeciesId.sunflower: 7,
           FlowerSpeciesId.tulip: 2,
         },
@@ -148,7 +148,7 @@ void main() {
       expect(restored.nutrientValue, 125);
       expect(restored.streakDays, 7);
       expect(restored.themeId, GardenThemeId.lavenderSlope);
-      expect(restored.seedCountBySpecies[FlowerSpeciesId.sunflower], 7);
+      expect(restored.petalStockBySpecies[FlowerSpeciesId.sunflower], 7);
       expect(restored.flowers, hasLength(2));
       expect(restored.flowers.first.plantedAt, DateTime(2026, 3, 1));
       expect(restored.flowers.first.nutrientBoost, 30);

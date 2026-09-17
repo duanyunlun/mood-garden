@@ -19,7 +19,7 @@ void main() {
       nutrientValue: nutrient,
       streakDays: streak,
       flowers: flowers,
-      seedCountBySpecies: seeds,
+      petalStockBySpecies: seeds,
     );
   }
 
@@ -209,9 +209,9 @@ void main() {
         seeds: const <String, int>{FlowerSpeciesId.sunflower: 7},
       );
 
-      expect(garden.seedsOfSpecies(FlowerSpeciesId.sunflower), 7);
+      expect(garden.petalsOfSpecies(FlowerSpeciesId.sunflower), 7);
       expect(
-        garden.seedsUntilNextBloom(FlowerSpeciesId.sunflower),
+        garden.petalsUntilBloom,
         3,
         reason: 'PRD 示例：再种 3 颗会长出第一朵花',
       );
@@ -220,21 +220,21 @@ void main() {
     test('刚好整除时重新开始计数', () {
       final garden = buildGarden(
         seeds: const <String, int>{
-          FlowerSpeciesId.sunflower: AppConstants.seedsPerBloom,
+          FlowerSpeciesId.sunflower: AppConstants.petalsPerBloom,
         },
       );
 
       expect(
-        garden.seedsUntilNextBloom(FlowerSpeciesId.sunflower),
-        AppConstants.seedsPerBloom,
+        garden.petalsUntilBloom,
+        AppConstants.petalsPerBloom,
       );
     });
 
     test('未种过的花种种子数为 0', () {
-      expect(buildGarden().seedsOfSpecies(FlowerSpeciesId.wheat), 0);
+      expect(buildGarden().petalsOfSpecies(FlowerSpeciesId.wheat), 0);
       expect(
-        buildGarden().seedsUntilNextBloom(FlowerSpeciesId.wheat),
-        AppConstants.seedsPerBloom,
+        buildGarden().petalsUntilBloom,
+        AppConstants.petalsPerBloom,
       );
     });
 
