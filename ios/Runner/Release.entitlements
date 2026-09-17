@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Keychain Sharing。
+	     这是 flutter_secure_storage 在 iOS / macOS 上的硬性要求：
+	     缺了它，密钥会「看起来写成功但实际没写进去」，
+	     本次运行正常、下次启动却解不开旧密文——最危险的一种失败方式。
+	     本项目不使用 App Group（不与其它 App 共享条目），因此数组留空即可；
+	     若将来要共享，加入 $(AppIdentifierPrefix)<App Group 名>。
+	     ⚠️ 该 entitlement 需要 provisioning profile 才能生效。 -->
+	<key>keychain-access-groups</key>
+	<array/>
+</dict>
+</plist>

@@ -11,9 +11,14 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
+        // 只用国内镜像：本网络环境下 maven.google.com 连接超时不可达，
+        // 而 Android Gradle Plugin 与 Kotlin 插件都托管在 Google Maven 上，
+        // 走官方源会让每次坐标解析都先等一轮超时。
+        // 需要换回官方源时，把 google() / mavenCentral() / gradlePluginPortal()
+        // 加回本列表即可——阿里云镜像收录了这三者的全部坐标。
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
     }
 }
 

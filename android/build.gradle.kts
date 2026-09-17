@@ -1,7 +1,9 @@
 allprojects {
     repositories {
-        google()
-        mavenCentral()
+        // 同上：只用国内镜像（原因见 settings.gradle.kts 的说明）。
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
     }
 }
 

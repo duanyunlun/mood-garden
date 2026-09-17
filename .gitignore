@@ -58,3 +58,10 @@ Thumbs.db
 *.keystore
 *.jks
 secrets/
+
+# 分发产物（本地打包的安装包，不进版本库）
+dist/
+
+# 原始 PRD（Word 原件）。docs/PRD.md 是它的转换归档，
+# 按 docs/PRD.md 开头的约定，原件不纳入版本管理。
+docs/*.docx
