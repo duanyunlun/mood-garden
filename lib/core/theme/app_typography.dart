@@ -83,10 +83,13 @@ abstract final class AppTypography {
       color: AppColors.inkSecondary,
     ),
     // 极小辅助文字（收集进度、时间戳）
+    //
+    // 用 inkMuted 而不是 inkTertiary：时间戳和计数是有信息量的，
+    // 而 inkTertiary 只有约 2.3:1 的对比度，只适合禁用态与纯装饰。
     labelSmall: TextStyle(
       fontSize: 11,
       height: 1.35,
-      color: AppColors.inkTertiary,
+      color: AppColors.inkMuted,
     ),
   );
 

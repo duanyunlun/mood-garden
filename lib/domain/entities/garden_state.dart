@@ -1,5 +1,6 @@
 import '../../core/constants/app_constants.dart';
 import 'flower.dart';
+import 'flower_species.dart';
 import 'garden_theme.dart';
 import 'growth_stage.dart';
 
@@ -21,6 +22,7 @@ class GardenState {
     this.streakDays = 0,
     this.flowers = const <Flower>[],
     this.seedCountBySpecies = const <String, int>{},
+    this.unlockedSpeciesIds = const <String>{},
     this.themeId = GardenThemeId.sunflowerField,
     this.lastRecordedDay,
   });
@@ -45,6 +47,13 @@ class GardenState {
   ///
   /// key 为花种 id，value 为种子颗数。
   final Map<String, int> seedCountBySpecies;
+
+  /// 已解锁的进阶花种 id（PRD 7.1.3 的进化花种）。
+  ///
+  /// 刻意独立成一个集合，而不是每次由种子数现算：解锁是**一次性事件**，
+  /// 一旦达成就不该因为后续计数变化（例如清除数据重来之外的任何情况）而回退。
+  /// 现算还会让「已解锁」与「解锁瞬间的花园状态」脱钩。
+  final Set<String> unlockedSpeciesIds;
 
   /// 当前花园主题（PRD Tab4 换肤）。
   final String themeId;
@@ -137,9 +146,16 @@ class GardenState {
     return current / AppConstants.seedsPerBloom;
   }
 
-  /// 已收集的花种数量（至少开出过一朵花），用于图鉴收集度（PRD Tab3）。
-  int get collectedSpeciesCount =>
-      flowers.map((f) => f.speciesId).toSet().length;
+  /// 指定时刻已收集的花种数量（至少开出过一朵花），用于图鉴收集度（PRD Tab3）。
+  ///
+  /// 口径必须与图鉴卡片的「已收集」判定一致：**开花才算收集**。
+  /// 只种下种子仍算未收集（卡片显示为剪影），否则会出现
+  /// 「顶部说收集了 3 种、页面上却有 2 张剪影」的自相矛盾。
+  int collectedSpeciesCountAt(DateTime now) => flowers
+      .where((f) => f.isBloomingAt(now))
+      .map((f) => f.speciesId)
+      .toSet()
+      .length;
 
   // ---------------------------------------------------------------------------
   // 隐藏款解锁（PRD 7.1.3）
@@ -148,6 +164,19 @@ class GardenState {
   /// 连续记录是否已达隐藏款花种的解锁阈值。
   bool get hiddenSpeciesUnlocked =>
       streakDays >= AppConstants.hiddenSpeciesStreakDays;
+
+  /// 某个进阶花种是否已解锁。
+  ///
+  /// 隐藏款走的是另一条路径（看连续天数，不看集合），因此这里对它一并为真。
+  bool isSpeciesUnlocked(String speciesId) {
+    if (unlockedSpeciesIds.contains(speciesId)) {
+      return true;
+    }
+    final species = FlowerSpecies.byId(speciesId);
+    return species != null &&
+        species.rarity == SpeciesRarity.hidden &&
+        hiddenSpeciesUnlocked;
+  }
 
   /// 距离解锁隐藏款花种还差几天。已解锁返回 0。
   int get daysToHiddenSpecies {
@@ -197,6 +226,7 @@ class GardenState {
     int? streakDays,
     List<Flower>? flowers,
     Map<String, int>? seedCountBySpecies,
+    Set<String>? unlockedSpeciesIds,
     String? themeId,
     DateTime? lastRecordedDay,
   }) {
@@ -205,6 +235,7 @@ class GardenState {
       streakDays: streakDays ?? this.streakDays,
       flowers: flowers ?? this.flowers,
       seedCountBySpecies: seedCountBySpecies ?? this.seedCountBySpecies,
+      unlockedSpeciesIds: unlockedSpeciesIds ?? this.unlockedSpeciesIds,
       themeId: themeId ?? this.themeId,
       lastRecordedDay: lastRecordedDay ?? this.lastRecordedDay,
     );

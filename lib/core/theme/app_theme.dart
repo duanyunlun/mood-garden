@@ -32,26 +32,31 @@ abstract final class AppTheme {
   static const Duration motionRitual = Duration(milliseconds: 900);
 
   static ThemeData light() {
+    // onXxx 一律用深色而不是奶油白。
+    //
+    // 理由是实算出来的：奶油白（#FFFBF2）压在暖橘黄（#F2A65A）上只有 1.96:1，
+    // 连 WCAG AA 的一半都不到——按钮上的字会发虚。暖色系本来就亮，
+    // 深棕字反而更清楚（4.98:1），也更符合整体柔和的调性。
     const colorScheme = ColorScheme(
       brightness: Brightness.light,
       // 主色：暖橘黄（开心事 / 花朵）
       primary: AppColors.warmApricot,
-      onPrimary: AppColors.inkInverse,
+      onPrimary: AppColors.inkPrimary,
       primaryContainer: AppColors.warmApricotSoft,
-      onPrimaryContainer: AppColors.warmApricotDeep,
+      onPrimaryContainer: AppColors.inkPrimary,
       // 次色：鼠尾草绿（点缀）
       secondary: AppColors.sageGreen,
-      onSecondary: AppColors.inkInverse,
+      onSecondary: AppColors.inkPrimary,
       secondaryContainer: AppColors.sageGreenSoft,
-      onSecondaryContainer: AppColors.sageGreenDeep,
+      onSecondaryContainer: AppColors.inkPrimary,
       // 三级色：雾雾灰粉（不开心事 / 纸卷）
       tertiary: AppColors.mistyRose,
-      onTertiary: AppColors.inkInverse,
+      onTertiary: AppColors.inkPrimary,
       tertiaryContainer: AppColors.mistyRoseSoft,
-      onTertiaryContainer: AppColors.mistyRoseDeep,
+      onTertiaryContainer: AppColors.inkPrimary,
       // 错误态沿用雾雾灰粉体系，避免出现刺眼的系统红
       error: AppColors.mistyRoseDeep,
-      onError: AppColors.inkInverse,
+      onError: AppColors.inkPrimary,
       surface: AppColors.creamWhite,
       onSurface: AppColors.inkPrimary,
       surfaceContainerHighest: AppColors.creamSoft,

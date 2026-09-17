@@ -2,12 +2,15 @@ import 'package:flutter/foundation.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/utils/id_generator.dart';
+import '../domain/entities/entry_filter.dart';
 import '../domain/entities/flower.dart';
 import '../domain/entities/flower_species.dart';
 import '../domain/entities/garden_state.dart';
 import '../domain/entities/growth_stage.dart';
 import '../domain/entities/mood_entry.dart';
 import '../domain/entities/mood_tag.dart';
+import '../domain/entities/tag_catalog.dart';
+import '../domain/repositories/entry_image_store.dart';
 import '../domain/repositories/entry_repository.dart';
 import '../domain/repositories/garden_repository.dart';
 
@@ -24,6 +27,7 @@ class PlantSeedResult {
     required this.totalSeedsOfSpecies,
     required this.seedsUntilNextBloom,
     required this.nutrientGained,
+    this.unlockedSpecies = const <FlowerSpecies>[],
   });
 
   /// 新写入的开心事记录。
@@ -43,6 +47,11 @@ class PlantSeedResult {
 
   /// 本次记录为花园带来的养分值增量。
   final int nutrientGained;
+
+  /// 本次记录**恰好解锁**的进化花种（PRD 7.1.3）。
+  ///
+  /// 界面据此给一次额外的正反馈；为空表示这次没有新解锁。
+  final List<FlowerSpecies> unlockedSpecies;
 }
 
 /// 一次「点燃纸卷」的结果。供 UI 播放灰烬入土反馈。
@@ -80,11 +89,14 @@ class MoodGardenController extends ChangeNotifier {
   MoodGardenController({
     required EntryRepository entryRepository,
     required GardenRepository gardenRepository,
+    required EntryImageStore imageStore,
   })  : _entryRepository = entryRepository,
-        _gardenRepository = gardenRepository;
+        _gardenRepository = gardenRepository,
+        _imageStore = imageStore;
 
   final EntryRepository _entryRepository;
   final GardenRepository _gardenRepository;
+  final EntryImageStore _imageStore;
 
   bool _isLoading = true;
   List<MoodEntry> _entries = const <MoodEntry>[];
@@ -130,11 +142,15 @@ class MoodGardenController extends ChangeNotifier {
   }
 
   /// 指定日的全部记录。
-  List<MoodEntry> entriesOn(DateTime day) {
+  ///
+  /// [filter] 为空时返回全部；否则只返回命中的记录（PRD Tab2 P2 的筛选）。
+  List<MoodEntry> entriesOn(DateTime day, {EntryFilter? filter}) {
     final target = DateTime(day.year, day.month, day.day);
-    return _entries
-        .where((e) => e.occurredDay == target)
-        .toList(growable: false);
+    final all = _entries.where((e) => e.occurredDay == target);
+    if (filter == null || filter.isEmpty) {
+      return all.toList(growable: false);
+    }
+    return all.where(filter.matches).toList(growable: false);
   }
 
   /// 指定日的开心事。
@@ -175,6 +191,21 @@ class MoodGardenController extends ChangeNotifier {
         );
   }
 
+  /// 当前可选的标签（含已解锁的进化款与隐藏款，以及季节性可用性）。
+  ///
+  /// [customTags] 由设置控制器提供：自定义标签归设置管，
+  /// 但「能不能种、种出什么花」必须和花园进度一起算，
+  /// 所以组合这一步放在这里而不是界面里。
+  List<SelectableTag> availableTags({
+    List<MoodTag> customTags = const <MoodTag>[],
+    DateTime? now,
+  }) =>
+      TagCatalog.available(
+        garden: _garden,
+        customTags: customTags,
+        now: now,
+      );
+
   // ---------------------------------------------------------------------------
   // PRD 7.1 开心事记录 → 种花机制
   // ---------------------------------------------------------------------------
@@ -186,15 +217,29 @@ class MoodGardenController extends ChangeNotifier {
   /// 2. 按标签对应的花种，在花园中种下一株植物；
   /// 3. 增加基础养分值（PRD 7.3 正向路径）；
   /// 4. 更新连续记录天数（PRD 7.1.3 隐藏款解锁依据）。
+  ///
+  /// [images] 是用户新选的图片字节（相册或拍照）。它们会被加密后各自存成
+  /// 单独的文件，记录里只保留 id——明文图片不会被写进磁盘。
   Future<PlantSeedResult> plantSeed({
     required String tagId,
     required String text,
-    List<String> imagePaths = const <String>[],
+    String? speciesId,
+    List<Uint8List> images = const <Uint8List>[],
     DateTime? occurredAt,
   }) async {
     final now = DateTime.now();
     final tag = resolveTag(tagId);
-    final speciesId = tag.speciesId;
+    // 界面可以显式指定花种（进化款、隐藏款、自定义标签都由它解析），
+    // 不指定时按预设标签的固定对应关系推导。
+    final resolvedSpeciesId = speciesId ?? tag.speciesId;
+
+    // PRD 7.1.3 季节限定：非当季的花种不能种。
+    // 界面会把这类标签显示为不可选，这里再守一道——
+    // 否则任何绕过界面的调用都能把樱花种进十二月。
+    final blockedReason = TagCatalog.unavailableReason(resolvedSpeciesId, now);
+    if (blockedReason != null) {
+      throw StateError('这个花种现在不能种（$blockedReason）');
+    }
 
     final entry = HappyEntry(
       id: IdGenerator.next('happy'),
@@ -202,7 +247,7 @@ class MoodGardenController extends ChangeNotifier {
       createdAt: now,
       tagId: tagId,
       text: text,
-      imagePaths: imagePaths,
+      imagePaths: await _saveImages(images),
     );
 
     await _entryRepository.save(entry);
@@ -210,20 +255,34 @@ class MoodGardenController extends ChangeNotifier {
     // 新植物以记录归属时间为种下时间，保证补记的记录不会「一入土就开花」。
     final flower = Flower(
       id: IdGenerator.next('flower'),
-      speciesId: speciesId,
+      speciesId: resolvedSpeciesId,
       plantedAt: entry.occurredAt,
       nutrientBoost: _garden.nutrientValue,
     );
 
     final nextSeedCounts = Map<String, int>.of(_garden.seedCountBySpecies);
-    final totalSeeds = (nextSeedCounts[speciesId] ?? 0) + 1;
-    nextSeedCounts[speciesId] = totalSeeds;
+    final totalSeeds = (nextSeedCounts[resolvedSpeciesId] ?? 0) + 1;
+    nextSeedCounts[resolvedSpeciesId] = totalSeeds;
+
+    // PRD 7.1.3：同类标签攒够阈值 → 解锁进化花种。
+    // 判定放在这里而不是界面，是为了保证「解锁」与「这一次记录」是同一个事务，
+    // 不会因为界面没刷新而漏掉。
+    final unlocked = Set<String>.of(_garden.unlockedSpeciesIds);
+    final newlyUnlocked = <FlowerSpecies>[];
+    for (final evolved in FlowerSpecies.evolvedFrom(resolvedSpeciesId)) {
+      if (!unlocked.contains(evolved.id) &&
+          totalSeeds >= AppConstants.evolutionUnlockCount) {
+        unlocked.add(evolved.id);
+        newlyUnlocked.add(evolved);
+      }
+    }
 
     const nutrientGained = AppConstants.nutrientPerSeed;
 
     _garden = _garden.copyWith(
       nutrientValue: _garden.nutrientValue + nutrientGained,
       seedCountBySpecies: nextSeedCounts,
+      unlockedSpeciesIds: unlocked,
       flowers: <Flower>[..._garden.flowers, flower],
       streakDays: _nextStreak(entry.occurredDay),
       lastRecordedDay: _laterDay(_garden.lastRecordedDay, entry.occurredDay),
@@ -236,11 +295,12 @@ class MoodGardenController extends ChangeNotifier {
     return PlantSeedResult(
       entry: entry,
       flower: flower,
-      species: FlowerSpecies.byId(speciesId) ?? FlowerSpecies.sunflower,
+      species: FlowerSpecies.byId(resolvedSpeciesId) ?? FlowerSpecies.sunflower,
       totalSeedsOfSpecies: totalSeeds,
       seedsUntilNextBloom:
           AppConstants.seedsPerBloom - (totalSeeds % AppConstants.seedsPerBloom),
       nutrientGained: nutrientGained,
+      unlockedSpecies: newlyUnlocked,
     );
   }
 
@@ -254,7 +314,7 @@ class MoodGardenController extends ChangeNotifier {
   /// 用户可重新继续编辑纸卷内容）。
   Future<UnhappyEntry> saveScrollDraft({
     required String text,
-    List<String> imagePaths = const <String>[],
+    List<Uint8List> images = const <Uint8List>[],
     DateTime? occurredAt,
     String? existingId,
   }) async {
@@ -266,14 +326,25 @@ class MoodGardenController extends ChangeNotifier {
             .where((e) => e.id == existingId)
             .firstOrNull;
 
-    final entry = existing?.editContent(text: text, imagePaths: imagePaths) ??
-        UnhappyEntry(
-          id: IdGenerator.next('unhappy'),
-          occurredAt: occurredAt ?? now,
-          createdAt: now,
-          text: text,
-          imagePaths: imagePaths,
-        );
+    final newImageIds = await _saveImages(images);
+
+    final UnhappyEntry entry;
+    if (existing == null) {
+      entry = UnhappyEntry(
+        id: IdGenerator.next('unhappy'),
+        occurredAt: occurredAt ?? now,
+        createdAt: now,
+        text: text,
+        imagePaths: newImageIds,
+      );
+    } else {
+      // 继续编辑草稿时把新图追加到已有图后面，而不是覆盖——
+      // 否则用户中途松手再补一张图，先前选的图就丢了。
+      entry = existing.editContent(
+        text: text,
+        imagePaths: <String>[...existing.imagePaths, ...newImageIds],
+      );
+    }
 
     await _entryRepository.save(entry);
     _entries = await _entryRepository.loadAll();
@@ -284,7 +355,8 @@ class MoodGardenController extends ChangeNotifier {
   /// 点燃纸卷：燃烧 → 内容永久擦除 → 灰烬入土转化为养分。
   ///
   /// 这是 PRD 7.2 机制的完整结算：
-  /// - 7.2.3 隐私保护：调用 [UnhappyEntry.burn] 物理清空原文与图片引用；
+  /// - 7.2.3 隐私保护：调用 [UnhappyEntry.burn] 物理清空原文与图片引用，
+  ///   并**删除磁盘上的图片密文**；
   /// - 7.2.3 养分转化：灰烬为花园增加养分（负向转化路径）；
   /// - 7.3 闭环：两条路径在养分池汇合。
   ///
@@ -298,6 +370,14 @@ class MoodGardenController extends ChangeNotifier {
     final now = DateTime.now();
     final burned = entry.burn(now);
 
+    // 顺序是刻意的：先删图片密文，再落盘「已燃烧」的记录。
+    //
+    // 两种失败各会发生一次，代价并不对等：
+    // - 先删后写失败 → 草稿记录里留下几个加载不出来的图片引用（界面小瑕疵）；
+    // - 先写后删失败 → 磁盘上永久残留图片密文，而记录已经显示「已转化为养分」
+    //   （隐私承诺被静默破坏）。
+    // 后者是产品最核心的承诺，所以把删除放在前面。
+    await _imageStore.deleteAll(entry.imagePaths);
     await _entryRepository.save(burned);
 
     const nutrientGained = AppConstants.nutrientPerAsh;
@@ -323,9 +403,42 @@ class MoodGardenController extends ChangeNotifier {
   /// 注意：对已燃烧的纸卷，时光轴中只保留封条提示、不提供删除入口
   /// （PRD 7.2.3），因此本方法主要由开心事记录的编辑流程调用。
   Future<void> deleteEntry(String id) async {
+    // 记录被删掉之后，它的附图 id 就再也无人引用，密文会永久残留成垃圾。
+    // 所以先把图片一并删掉，再删记录本身。
+    final target = _entries.where((entry) => entry.id == id).firstOrNull;
+    if (target != null) {
+      await _imageStore.deleteAll(target.imagePaths);
+    }
+
     await _entryRepository.remove(id);
     _entries = await _entryRepository.loadAll();
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 附图（PRD 7.1.1 / 7.2.1 的图片输入）
+  // ---------------------------------------------------------------------------
+
+  /// 读取一张附图，供界面解密展示。
+  ///
+  /// 返回 `null` 表示图片不存在或无法解密——界面应当优雅跳过这一张，
+  /// 而不是让整页打不开。
+  Future<Uint8List?> loadImage(String id) => _imageStore.read(id);
+
+  /// 当前保存的附图数量，用于「隐私与数据」展示存储占用。
+  Future<int> imageCount() => _imageStore.count();
+
+  /// 把用户新选的图片加密存盘，返回它们的 id。
+  Future<List<String>> _saveImages(List<Uint8List> images) async {
+    if (images.isEmpty) {
+      return const <String>[];
+    }
+
+    final ids = <String>[];
+    for (final bytes in images) {
+      ids.add(await _imageStore.save(bytes));
+    }
+    return ids;
   }
 
   // ---------------------------------------------------------------------------
@@ -343,6 +456,8 @@ class MoodGardenController extends ChangeNotifier {
   Future<void> clearAllData() async {
     await _entryRepository.clear();
     await _gardenRepository.clear();
+    // 图片密文必须一起清掉：只清记录会留下永远无法访问、也无法删除的图片。
+    await _imageStore.wipe();
     _entries = const <MoodEntry>[];
     _garden = GardenState.empty;
     notifyListeners();

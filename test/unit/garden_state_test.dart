@@ -105,7 +105,43 @@ void main() {
         2,
       );
       expect(garden.bloomingCountOfSpecies(FlowerSpeciesId.tulip, now), 1);
-      expect(garden.collectedSpeciesCount, 2, reason: '已收集 2 个花种');
+      expect(
+        garden.collectedSpeciesCountAt(now),
+        2,
+        reason: '两个花种都已开花，计入已收集',
+      );
+    });
+
+    test('已收集只统计开过花的花种，种下未开花不算（PRD Tab3）', () {
+      final garden = buildGarden(
+        flowers: <Flower>[
+          // 向日葵已开花
+          flower(
+            id: 'bloomed',
+            speciesId: FlowerSpeciesId.sunflower,
+            plantedAt: now.subtract(const Duration(days: 20)),
+          ),
+          // 郁金香刚种下，还是种子
+          flower(
+            id: 'just-planted',
+            speciesId: FlowerSpeciesId.tulip,
+            plantedAt: now,
+          ),
+        ],
+      );
+
+      expect(
+        garden.collectedSpeciesCountAt(now),
+        1,
+        reason: '郁金香只种下未开花，图鉴里仍是剪影，不能计入已收集',
+      );
+      expect(
+        garden.collectedSpeciesCountAt(
+          now.add(const Duration(days: 20)),
+        ),
+        2,
+        reason: '时间推移后郁金香开花，才计入已收集',
+      );
     });
 
     test('生长阶段分布覆盖全部阶段', () {

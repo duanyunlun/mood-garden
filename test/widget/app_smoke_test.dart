@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mood_garden/app.dart';
+import 'package:mood_garden/application/settings_controller.dart';
 import 'package:mood_garden/application/mood_garden_controller.dart';
+import 'package:mood_garden/data/datasources/encrypted_image_store.dart';
 import 'package:mood_garden/data/datasources/local_store.dart';
+import 'package:mood_garden/data/datasources/storage_bootstrap.dart';
 import 'package:mood_garden/data/repositories/local_entry_repository.dart';
+import 'package:mood_garden/data/repositories/local_settings_repository.dart';
 import 'package:mood_garden/data/repositories/local_garden_repository.dart';
+import 'package:mood_garden/domain/repositories/sound_player.dart';
 import 'package:mood_garden/domain/entities/mood_tag.dart';
 import 'package:mood_garden/features/codex/codex_page.dart';
 import 'package:mood_garden/features/profile/profile_page.dart';
@@ -23,12 +28,29 @@ void main() {
     addTearDown(tester.view.reset);
 
     final store = InMemoryLocalStore();
+    final images = InMemoryEntryImageStore();
     final controller = MoodGardenController(
       entryRepository: LocalEntryRepository(store),
       gardenRepository: LocalGardenRepository(store),
+      imageStore: images,
     );
 
-    await tester.pumpWidget(MoodGardenApp(controller: controller));
+    await tester.pumpWidget(
+      MoodGardenApp(
+        controller: controller,
+        // 测试里不放音：NoopSoundPlayer 不触碰任何音频设备。
+        soundPlayer: const NoopSoundPlayer(),
+        settings: SettingsController(
+          repository: LocalSettingsRepository(store),
+        ),
+        // 组件测试注入内存存储：不触碰真实文件系统与系统安全区。
+        storage: StorageBootstrap(
+          store: store,
+          images: images,
+          kind: StorageKind.memory,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     return controller;
@@ -171,15 +193,25 @@ void main() {
       }
     });
 
-    testWidgets('我的页面展示四个设置入口', (WidgetTester tester) async {
+    testWidgets('我的页面：设置项都是真功能，且不暴露内部标记', (WidgetTester tester) async {
       await pumpApp(tester);
 
       await tester.tap(find.text('我的').last);
       await tester.pumpAndSettle();
 
-      for (final label in <String>['每日提醒', '分享中心', '无障碍', '隐私与数据']) {
+      for (final label in <String>['字体大小', '每日提醒', '分享花园', '隐私与数据']) {
         await scrollToInPage(tester, find.text(label), ProfilePage);
-        expect(find.text(label), findsOneWidget, reason: '$label 入口应当存在');
+        expect(find.text(label), findsOneWidget, reason: '$label 应当存在');
+      }
+
+      // 回归护栏：这些是给开发看的内部优先级标记，不该出现在产品界面上。
+      // 曾经它们被拿来给「点了没反应」的占位入口做角标。
+      for (final label in <String>['P1', 'P2', '待设计']) {
+        expect(
+          find.text(label),
+          findsNothing,
+          reason: '$label 不应出现在界面上',
+        );
       }
     });
   });

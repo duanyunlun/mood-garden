@@ -1,12 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../application/mood_garden_controller.dart';
+import '../../application/settings_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/date_formatter.dart';
 import '../../domain/entities/mood_entry.dart';
-import '../../domain/entities/mood_tag.dart';
+import '../../domain/entities/tag_catalog.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/soft_card.dart';
 import '../../shared/widgets/soft_empty_state.dart';
@@ -214,7 +217,10 @@ class _HappyEntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final tag = MoodTag.presetById(entry.tagId);
+    // 标签要能还原进化款、隐藏款与自定义标签，否则这些记录会退化成「记录 · 花」。
+    final customTags =
+        context.watch<SettingsController>().settings.customTags;
+    final tag = TagCatalog.displayTag(entry.tagId, customTags: customTags);
     final species = tag?.species;
 
     return SoftCard(
@@ -255,7 +261,7 @@ class _HappyEntryCard extends StatelessWidget {
           ],
           if (entry.imagePaths.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
-            _ImageStrip(count: entry.imagePaths.length),
+            _ImageStrip(imageIds: entry.imagePaths),
           ],
         ],
       ),
@@ -263,33 +269,146 @@ class _HappyEntryCard extends StatelessWidget {
   }
 }
 
-/// 图片占位条。
+/// 记录附图条。
 ///
-/// ⚠️ 骨架期仅展示图片数量占位，未接入真实图片渲染。
-/// 正式实现需要：
-/// 1. 接入 `image_picker` 完成相册选择 / 拍照（PRD 7.1.1 步骤 2）；
-/// 2. 图片文件本身也必须纳入加密存储（PRD 第 10 章）。
-class _ImageStrip extends StatelessWidget {
-  const _ImageStrip({required this.count});
+/// 图片是加密存的，这里按需解密后渲染——磁盘上没有可直接打开的明文图片文件。
+/// 单击任意一张进入全屏查看。
+class _ImageStrip extends StatefulWidget {
+  const _ImageStrip({required this.imageIds});
 
-  final int count;
+  final List<String> imageIds;
+
+  @override
+  State<_ImageStrip> createState() => _ImageStripState();
+}
+
+class _ImageStripState extends State<_ImageStrip> {
+  static const double _thumbSize = 92;
+
+  late final Future<List<Uint8List>> _images = _load();
+
+  Future<List<Uint8List>> _load() async {
+    final controller = context.read<MoodGardenController>();
+    final loaded = <Uint8List>[];
+    for (final id in widget.imageIds) {
+      final bytes = await controller.loadImage(id);
+      // 解不开的那一张直接跳过：少一张图，好过整页记录打不开。
+      if (bytes != null) {
+        loaded.add(bytes);
+      }
+    }
+    return loaded;
+  }
+
+  void _openViewer(List<Uint8List> images, int index) {
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black87,
+        pageBuilder: (_, _, _) => _ImageViewer(images: images, initial: index),
+        transitionsBuilder: (_, animation, _, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 68,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: count,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) => Container(
-          width: 68,
-          decoration: BoxDecoration(
-            color: AppColors.creamSoft,
-            borderRadius: BorderRadius.circular(12),
+    return FutureBuilder<List<Uint8List>>(
+      future: _images,
+      builder: (context, snapshot) {
+        final images = snapshot.data;
+        if (images == null) {
+          // 解密是毫秒级的本地操作，给个等高占位避免卡片高度跳动。
+          return const SizedBox(height: _thumbSize);
+        }
+        if (images.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return SizedBox(
+          height: _thumbSize,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: images.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) => Semantics(
+              button: true,
+              label: '查看第 ${index + 1} 张图片',
+              child: GestureDetector(
+                onTap: () => _openViewer(images, index),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    images[index],
+                    width: _thumbSize,
+                    height: _thumbSize,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
           ),
-          alignment: Alignment.center,
-          child: const Text('🖼️', style: TextStyle(fontSize: 20)),
+        );
+      },
+    );
+  }
+}
+
+/// 全屏看图。支持双指缩放与左右切换。
+class _ImageViewer extends StatefulWidget {
+  const _ImageViewer({required this.images, required this.initial});
+
+  final List<Uint8List> images;
+  final int initial;
+
+  @override
+  State<_ImageViewer> createState() => _ImageViewerState();
+}
+
+class _ImageViewerState extends State<_ImageViewer> {
+  late final PageController _pageController =
+      PageController(initialPage: widget.initial);
+  late int _current = widget.initial;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: GestureDetector(
+        onTap: () => Navigator.of(context).maybePop(),
+        child: Stack(
+          children: <Widget>[
+            PageView.builder(
+              controller: _pageController,
+              itemCount: widget.images.length,
+              onPageChanged: (index) => setState(() => _current = index),
+              itemBuilder: (context, index) => InteractiveViewer(
+                maxScale: 4,
+                child: Center(
+                  child: Image.memory(widget.images[index], fit: BoxFit.contain),
+                ),
+              ),
+            ),
+            if (widget.images.length > 1)
+              Positioned(
+                bottom: 40,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Text(
+                    '${_current + 1} / ${widget.images.length}',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

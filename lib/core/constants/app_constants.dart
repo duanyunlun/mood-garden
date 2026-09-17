@@ -12,6 +12,12 @@ abstract final class AppConstants {
   /// 产品 Slogan（PRD 2.2 核心心智）。
   static const String slogan = '每一种情绪都有价值';
 
+  /// 应用版本号。
+  ///
+  /// ⚠️ 必须与 `pubspec.yaml` 的 `version:` 保持一致：Dart 无法在编译期读取
+  /// pubspec，只能手工同步。发版前请一并核对这两处。
+  static const String appVersion = '0.3.0';
+
   /// 产品心智的完整表述（PRD 2.2）。
   static const String valueProposition = '开心的事被温柔地收藏，不开心的事被温柔地转化';
 
@@ -76,15 +82,38 @@ abstract final class AppConstants {
   // 存储（PRD 第 10 章「数据安全与隐私」）
   // ---------------------------------------------------------------------------
 
-  /// 本地持久化使用的加密密钥别名。
+  /// 本地持久化使用的主密钥别名。
   ///
-  /// 正式实现需接入 iOS Keychain / Android Keystore 托管密钥，
-  /// 骨架期由 [LocalStore] 的内存实现占位。
+  /// 密钥由系统安全区托管（iOS / macOS → Keychain，Android → Keystore），
+  /// 见 `data/datasources/secure_master_key_provider.dart`。
+  /// 它刻意不与密文放在一起。
   static const String encryptionKeyAlias = 'mood_garden_master_key';
 
   /// 单条记录最多可附加的图片数量（PRD 7.1.1 支持多图）。
+  ///
+  /// 图片输入尚未接入（前置条件是先解决图片的加密存储），
+  /// 因此当前界面没有图片入口；该上限先在此登记，避免实现时另立数值。
   static const int maxImagesPerEntry = 9;
 
   /// 文字记录的最大字数。
   static const int maxTextLength = 2000;
+
+  // ---------------------------------------------------------------------------
+  // 无障碍：应用内字体缩放（PRD 第 10 章）
+  // ---------------------------------------------------------------------------
+
+  /// 应用内字体缩放的允许区间（这是「用户能调多大」）。
+  ///
+  /// `1.0` 表示不干预、完全跟随系统（系统级放大由用户在系统设置里调）。
+  /// 这里的档位是给「系统调到最大还不够」的用户做补充。
+  static const double textScaleMin = 0.85;
+  static const double textScaleMax = 1.6;
+
+  /// 系统缩放 × 应用内缩放之后的最终上限（这是「布局能扛多大」）。
+  ///
+  /// 刻意不等于 [textScaleMax]：前者是用户可调的倍率，后者是布局的安全边界。
+  /// 若拿 [textScaleMax] 去夹最终值，系统已经调到 2.0 的用户会被**反向压低**
+  /// 到 1.6——那正好与无障碍的初衷相反。
+  /// 该值与无障碍测试逐页验证过的档位一致。
+  static const double textScaleCeiling = 2.0;
 }

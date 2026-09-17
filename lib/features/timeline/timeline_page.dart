@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../application/mood_garden_controller.dart';
+import '../../application/settings_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/date_formatter.dart';
+import '../../domain/entities/entry_filter.dart';
 import '../../domain/entities/mood_entry.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/soft_card.dart';
@@ -41,11 +43,110 @@ class _TimelinePageState extends State<TimelinePage> {
   TimelineView _view = TimelineView.month;
   late DateTime _anchor;
 
+  /// 当前筛选条件（PRD Tab2 P2）。空筛选表示看全部。
+  EntryFilter _filter = EntryFilter.none;
+
+  final TextEditingController _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _anchor = DateTime(now.year, now.month, now.day);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// 打开标签筛选面板（PRD Tab2 P2）。
+  ///
+  /// 面板里改的是**草稿**，点「应用」才生效——否则每点一个标签
+  /// 背后的三个视图都要重算一遍，页面会跟着抖。
+  Future<void> _pickTags(
+    BuildContext context,
+    MoodGardenController controller,
+  ) async {
+    final settings = context.read<SettingsController>();
+    final tags = controller.availableTags(
+      customTags: settings.settings.customTags,
+    );
+
+    var draft = _filter;
+    final picked = await showModalBottomSheet<EntryFilter>(
+      context: context,
+      backgroundColor: AppColors.creamWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppTheme.cardRadius),
+        ),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final textTheme = Theme.of(sheetContext).textTheme;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(AppTheme.pagePadding),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('按心情筛选', style: textTheme.titleLarge),
+                  const SizedBox(height: 6),
+                  Text(
+                    '可以多选。烧掉的纸卷没有心情标签，筛选时不会出现。',
+                    style: textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      for (final item in tags)
+                        _SelectableChip(
+                          label: item.tag.label,
+                          emoji: item.tag.emoji,
+                          selected: draft.tagIds.contains(item.tag.id),
+                          onTap: () => setSheetState(
+                            () => draft = draft.toggleTag(item.tag.id),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => setSheetState(
+                            () => draft = draft.copyWith(tagIds: <String>{}),
+                          ),
+                          child: const Text('清空标签'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () =>
+                              Navigator.of(sheetContext).pop(draft),
+                          child: const Text('应用'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (picked != null && mounted) {
+      setState(() => _filter = picked);
+    }
   }
 
   void _shift(int delta) {
@@ -110,15 +211,28 @@ class _TimelinePageState extends State<TimelinePage> {
                     _anchor = DateTime(now.year, now.month, now.day);
                   }),
                 ),
+                _FilterBar(
+                  filter: _filter,
+                  searchController: _searchController,
+                  onChanged: (next) => setState(() => _filter = next),
+                  onPickTags: () => _pickTags(context, controller),
+                ),
                 Expanded(
                   child: switch (_view) {
-                    TimelineView.week =>
-                      _WeekView(anchor: _anchor, controller: controller),
-                    TimelineView.month =>
-                      _MonthView(anchor: _anchor, controller: controller),
+                    TimelineView.week => _WeekView(
+                        anchor: _anchor,
+                        controller: controller,
+                        filter: _filter,
+                      ),
+                    TimelineView.month => _MonthView(
+                        anchor: _anchor,
+                        controller: controller,
+                        filter: _filter,
+                      ),
                     TimelineView.year => _YearView(
                         anchor: _anchor,
                         controller: controller,
+                        filter: _filter,
                         onMonthSelected: (year, month) {
                           setState(() {
                             _anchor = DateTime(year, month, 1);
@@ -131,6 +245,189 @@ class _TimelinePageState extends State<TimelinePage> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+
+/// 时光轴筛选条：搜索框 + 标签筛选入口 + 当前生效条件。
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.filter,
+    required this.searchController,
+    required this.onChanged,
+    required this.onPickTags,
+  });
+
+  final EntryFilter filter;
+  final TextEditingController searchController;
+  final ValueChanged<EntryFilter> onChanged;
+  final VoidCallback onPickTags;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.pagePadding,
+        0,
+        AppTheme.pagePadding,
+        8,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextField(
+                  controller: searchController,
+                  onChanged: (value) =>
+                      onChanged(filter.copyWith(keyword: value)),
+                  style: textTheme.bodySmall,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '搜搜写过什么',
+                    hintStyle: textTheme.labelSmall,
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      size: 18,
+                      color: AppColors.inkTertiary,
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 34,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _TagFilterButton(
+                count: filter.tagIds.length,
+                onTap: onPickTags,
+              ),
+            ],
+          ),
+          if (filter.isActive) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    filter.summary,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: AppColors.warmApricotDeep,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    searchController.clear();
+                    onChanged(EntryFilter.none);
+                  },
+                  child: const Text('清除筛选'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 标签筛选入口，带已选数量角标。
+class _TagFilterButton extends StatelessWidget {
+  const _TagFilterButton({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: count == 0 ? '按心情筛选' : '按心情筛选，已选 $count 个标签',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: count > 0 ? AppColors.warmApricotSoft : Colors.white,
+            borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text('🏷️', style: TextStyle(fontSize: 14)),
+              if (count > 0) ...<Widget>[
+                const SizedBox(width: 5),
+                Text(
+                  '$count',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: AppColors.warmApricotDeep,
+                      ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 筛选面板里的可多选标签。
+class _SelectableChip extends StatelessWidget {
+  const _SelectableChip({
+    required this.label,
+    required this.emoji,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String emoji;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: '$label 标签',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.warmApricotSoft : AppColors.creamSoft,
+            borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+            border: Border.all(
+              color: selected ? AppColors.warmApricot : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 5),
+              Text(label, style: Theme.of(context).textTheme.labelMedium),
+            ],
+          ),
         ),
       ),
     );
@@ -153,13 +450,18 @@ class _ViewSwitcher extends StatelessWidget {
         AppTheme.pagePadding,
         6,
       ),
-      child: Row(
+      // 用 Wrap 而非 Row + Spacer：字体放大到 2x 时标题与视图切换器会挤不下，
+      // Wrap 让切换器折到下一行，而不是把标题压到溢出（PRD 第 10 章无障碍）。
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
         children: <Widget>[
           Text(
             '时光轴',
             style: Theme.of(context).textTheme.headlineMedium,
           ),
-          const Spacer(),
           SegmentedButton<TimelineView>(
             segments: TimelineView.values
                 .map(
@@ -243,10 +545,15 @@ class _PeriodNavigator extends StatelessWidget {
 
 /// 周视图：7 天纵向列表，每天展示当天记录摘要。
 class _WeekView extends StatelessWidget {
-  const _WeekView({required this.anchor, required this.controller});
+  const _WeekView({
+    required this.anchor,
+    required this.controller,
+    required this.filter,
+  });
 
   final DateTime anchor;
   final MoodGardenController controller;
+  final EntryFilter filter;
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +575,7 @@ class _WeekView extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final day = days[index];
-        return _DayCard(day: day, controller: controller);
+        return _DayCard(day: day, controller: controller, filter: filter);
       },
     );
   }
@@ -276,15 +583,20 @@ class _WeekView extends StatelessWidget {
 
 /// 周视图中的单日卡片。
 class _DayCard extends StatelessWidget {
-  const _DayCard({required this.day, required this.controller});
+  const _DayCard({
+    required this.day,
+    required this.controller,
+    required this.filter,
+  });
 
   final DateTime day;
   final MoodGardenController controller;
+  final EntryFilter filter;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final entries = controller.entriesOn(day);
+    final entries = controller.entriesOn(day, filter: filter);
     final isToday = DateFormatter.isToday(day);
 
     return SoftCard(
@@ -380,10 +692,15 @@ class _MiniChip extends StatelessWidget {
 
 /// 月视图：日历网格。有记录的日期用暖橘黄圆点标记，已转化的纸卷用灰点标记。
 class _MonthView extends StatelessWidget {
-  const _MonthView({required this.anchor, required this.controller});
+  const _MonthView({
+    required this.anchor,
+    required this.controller,
+    required this.filter,
+  });
 
   final DateTime anchor;
   final MoodGardenController controller;
+  final EntryFilter filter;
 
   static const List<String> _weekdayHeaders = <String>[
     '一',
@@ -444,6 +761,7 @@ class _MonthView extends StatelessWidget {
                       child: _DayCell(
                         day: DateTime(year, month, dayNumber),
                         controller: controller,
+                        filter: filter,
                       ),
                     );
                   }),
@@ -462,6 +780,7 @@ class _MonthView extends StatelessWidget {
           year: year,
           month: month,
           controller: controller,
+          filter: filter,
         ),
       ],
     );
@@ -470,15 +789,20 @@ class _MonthView extends StatelessWidget {
 
 /// 月视图中的单个日期格。
 class _DayCell extends StatelessWidget {
-  const _DayCell({required this.day, required this.controller});
+  const _DayCell({
+    required this.day,
+    required this.controller,
+    required this.filter,
+  });
 
   final DateTime day;
   final MoodGardenController controller;
+  final EntryFilter filter;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final entries = controller.entriesOn(day);
+    final entries = controller.entriesOn(day, filter: filter);
     final isToday = DateFormatter.isToday(day);
     final happy = entries.whereType<HappyEntry>().length;
     final burned = entries
@@ -521,7 +845,8 @@ class _DayCell extends StatelessWidget {
                   if (happy > 0)
                     const _Dot(color: AppColors.warmApricot),
                   if (happy > 0 && burned > 0) const SizedBox(width: 3),
-                  if (burned > 0) const _Dot(color: AppColors.ash),
+                  if (burned > 0)
+                    const _Dot(color: AppColors.ash, hollow: true),
                 ],
               ),
             ),
@@ -533,16 +858,26 @@ class _DayCell extends StatelessWidget {
 }
 
 class _Dot extends StatelessWidget {
-  const _Dot({required this.color});
+  const _Dot({required this.color, this.hollow = false});
 
   final Color color;
+
+  /// 空心表示「已转化」。
+  ///
+  /// 用形状而不只是颜色来区分两种记录：全色盲用户看不出暖橘黄与灰烬色的差别，
+  /// 但看得出实心与空心（PRD 第 10 章要求照顾色弱 / 色盲用户的可辨识度）。
+  final bool hollow;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 5,
       height: 5,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      decoration: BoxDecoration(
+        color: hollow ? null : color,
+        border: hollow ? Border.all(color: color, width: 1.2) : null,
+        shape: BoxShape.circle,
+      ),
     );
   }
 }
@@ -553,11 +888,13 @@ class _MonthDigest extends StatelessWidget {
     required this.year,
     required this.month,
     required this.controller,
+    required this.filter,
   });
 
   final int year;
   final int month;
   final MoodGardenController controller;
+  final EntryFilter filter;
 
   @override
   Widget build(BuildContext context) {
@@ -567,7 +904,7 @@ class _MonthDigest extends StatelessWidget {
     var activeDays = 0;
 
     for (var d = 1; d <= daysInMonth; d++) {
-      final entries = controller.entriesOn(DateTime(year, month, d));
+      final entries = controller.entriesOn(DateTime(year, month, d), filter: filter);
       if (entries.isEmpty) {
         continue;
       }
@@ -619,11 +956,13 @@ class _YearView extends StatelessWidget {
   const _YearView({
     required this.anchor,
     required this.controller,
+    required this.filter,
     required this.onMonthSelected,
   });
 
   final DateTime anchor;
   final MoodGardenController controller;
+  final EntryFilter filter;
 
   /// 点击某个月份时下钻到月视图。
   final void Function(int year, int month) onMonthSelected;
@@ -632,28 +971,43 @@ class _YearView extends StatelessWidget {
   Widget build(BuildContext context) {
     final year = anchor.year;
 
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(
-        AppTheme.pagePadding,
-        8,
-        AppTheme.pagePadding,
-        28,
-      ),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.92,
-      ),
-      itemCount: 12,
-      itemBuilder: (context, index) {
-        final month = index + 1;
-        return _MonthTile(
-          year: year,
-          month: month,
-          controller: controller,
-          // 点击月份下钻到月视图
-          onTap: () => onMonthSelected(year, month),
+    // 与图鉴、花园主题选择器同理：用 Wrap + 固定列宽，而不是 GridView 的
+    // 固定宽高比。GridView 的 childAspectRatio 意味着固定行高，一旦系统字体
+    // 放大（PRD 第 10 章「无障碍」要求文字大小可调节），Column 就会
+    // RenderFlex overflow；Wrap 的卡片高度由内容决定，永不溢出。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        const columns = 3;
+        // 注意要扣掉页面左右安全边距，否则每行会超出可用宽度。
+        final available = constraints.maxWidth - AppTheme.pagePadding * 2;
+        final itemWidth = (available - spacing * (columns - 1)) / columns;
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.pagePadding,
+            8,
+            AppTheme.pagePadding,
+            28,
+          ),
+          child: Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: <Widget>[
+              for (var month = 1; month <= 12; month++)
+                SizedBox(
+                  width: itemWidth,
+                  child: _MonthTile(
+                    year: year,
+                    month: month,
+                    controller: controller,
+                    filter: filter,
+                    // 点击月份下钻到月视图
+                    onTap: () => onMonthSelected(year, month),
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );
@@ -665,12 +1019,14 @@ class _MonthTile extends StatelessWidget {
     required this.year,
     required this.month,
     required this.controller,
+    required this.filter,
     required this.onTap,
   });
 
   final int year;
   final int month;
   final MoodGardenController controller;
+  final EntryFilter filter;
   final VoidCallback onTap;
 
   @override
@@ -679,7 +1035,7 @@ class _MonthTile extends StatelessWidget {
     final daysInMonth = DateFormatter.daysInMonth(year, month);
     var count = 0;
     for (var d = 1; d <= daysInMonth; d++) {
-      count += controller.entriesOn(DateTime(year, month, d)).length;
+      count += controller.entriesOn(DateTime(year, month, d), filter: filter).length;
     }
 
     final ratio = daysInMonth == 0 ? 0.0 : (count / daysInMonth).clamp(0.0, 1.0);
@@ -696,9 +1052,12 @@ class _MonthTile extends StatelessWidget {
             ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // Wrap 中高度不受约束，必须用 min 尺寸；间距改用显式 SizedBox
+        // （spaceBetween 在 min 尺寸下没有多余空间可分配）。
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Text('$month月', style: textTheme.titleMedium),
+          const SizedBox(height: 8),
           Text(
             count == 0 ? '安静' : '$count 条',
             style: textTheme.labelSmall,

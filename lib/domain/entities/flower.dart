@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import '../../core/constants/app_constants.dart';
 import 'flower_species.dart';
 import 'growth_stage.dart';
@@ -118,10 +116,22 @@ class Flower {
   /// 否则每帧重绘都会「跳一下」，破坏柔和治愈的观感（PRD 11.3）。
   int get renderSeed => id.hashCode;
 
-  /// 由稳定种子生成 `0.0 ~ 1.0` 的确定性伪随机数，供布局抖动使用。
+  /// 由稳定种子生成 `min ~ max` 的确定性伪随机数，供布局抖动使用。
+  ///
+  /// 用整数散列而不是 `math.Random`：花园里可能有几百株植物，
+  /// 每株每次重建都新建一个 `Random` 会产生大量短命对象，
+  /// 而这一屏在首页是每次 `setState` 都要重算的。
+  /// 散列同样确定（同一株永远落在同一处），但没有分配。
   double jitter(int salt, {double min = 0.0, double max = 1.0}) {
-    final rng = math.Random(renderSeed ^ salt);
-    return min + rng.nextDouble() * (max - min);
+    var hash = renderSeed ^ (salt * 0x9E3779B1);
+    hash ^= hash >> 16;
+    hash = (hash * 0x7FEB352D) & 0xFFFFFFFF;
+    hash ^= hash >> 15;
+    hash = (hash * 0x846CA68B) & 0xFFFFFFFF;
+    hash ^= hash >> 16;
+
+    final unit = (hash & 0xFFFFFF) / 0xFFFFFF;
+    return min + unit * (max - min);
   }
 
   Flower copyWith({

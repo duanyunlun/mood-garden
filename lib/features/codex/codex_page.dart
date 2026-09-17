@@ -59,7 +59,7 @@ class CodexPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '已收集 ${garden.collectedSpeciesCount} / '
+                  '已收集 ${garden.collectedSpeciesCountAt(now)} / '
                   '${FlowerSpecies.catalog.length} 种花',
                   style: Theme.of(context).textTheme.labelSmall,
                 ),

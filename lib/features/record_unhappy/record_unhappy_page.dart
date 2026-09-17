@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +8,8 @@ import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/date_formatter.dart';
+import '../../shared/sound_feedback.dart';
+import '../../shared/widgets/entry_image_field.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/soft_card.dart';
 import 'widgets/ash_scatter_overlay.dart';
@@ -53,6 +57,9 @@ class _RecordUnhappyPageState extends State<RecordUnhappyPage>
   _BurnPhase _phase = _BurnPhase.editing;
   int _nutrientGained = 0;
 
+  /// 用户新选的图片字节。点燃时交给控制器加密落盘，随后随纸卷一起被擦除。
+  List<Uint8List> _images = <Uint8List>[];
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +76,10 @@ class _RecordUnhappyPageState extends State<RecordUnhappyPage>
     super.dispose();
   }
 
-  bool get _hasContent => _textController.text.trim().isNotEmpty;
+  /// 纸卷有内容才允许点燃。只放了一张照片、没写字也算内容——
+  /// 有些事说不出口，但拍下来了。
+  bool get _hasContent =>
+      _textController.text.trim().isNotEmpty || _images.isNotEmpty;
 
   bool get _isBurning => _phase != _BurnPhase.editing;
 
@@ -82,10 +92,13 @@ class _RecordUnhappyPageState extends State<RecordUnhappyPage>
     final controller = context.read<MoodGardenController>();
 
     setState(() => _phase = _BurnPhase.burning);
+    // 划火柴的声音：与火苗同时起，这是整个仪式最需要被听见的一下
+    playFeedback(context, (player) => player.playIgnite());
 
     // 先把当前内容落库为草稿，再由 burnScroll 完成不可逆的擦除结算。
     final draft = await controller.saveScrollDraft(
       text: _textController.text.trim(),
+      images: _images,
       occurredAt: _occurredAt,
     );
 
@@ -103,6 +116,8 @@ class _RecordUnhappyPageState extends State<RecordUnhappyPage>
 
     _nutrientGained = result.nutrientGained;
     setState(() => _phase = _BurnPhase.scattering);
+    // 灰烬落定的收束音：事情到这里才算结束
+    playFeedback(context, (player) => player.playSeedLanded());
 
     // 灰烬飘入花园土壤
     await Future<void>.delayed(AshScatterOverlay.totalDuration);
@@ -189,6 +204,9 @@ class _RecordUnhappyPageState extends State<RecordUnhappyPage>
                       controller: _textController,
                       enabled: !_isBurning,
                       onChanged: () => setState(() {}),
+                      images: _images,
+                      onImagesChanged: (images) =>
+                          setState(() => _images = images),
                     ),
                   ),
                   // 燃烧时的火苗遮罩
@@ -299,17 +317,21 @@ class _RecordUnhappyPageState extends State<RecordUnhappyPage>
   }
 }
 
-/// 纸卷内部内容：文字输入 + 图片占位。
+/// 纸卷内部内容：文字输入 + 图片。
 class _ScrollContent extends StatelessWidget {
   const _ScrollContent({
     required this.controller,
     required this.enabled,
     required this.onChanged,
+    required this.images,
+    required this.onImagesChanged,
   });
 
   final TextEditingController controller;
   final bool enabled;
   final VoidCallback onChanged;
+  final List<Uint8List> images;
+  final ValueChanged<List<Uint8List>> onImagesChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -353,16 +375,10 @@ class _ScrollContent extends StatelessWidget {
             contentPadding: EdgeInsets.zero,
           ),
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: <Widget>[
-            const Text('🖼️', style: TextStyle(fontSize: 15)),
-            const SizedBox(width: 7),
-            Text(
-              '图片（待接入相册与加密存储）',
-              style: textTheme.labelSmall,
-            ),
-          ],
+        const SizedBox(height: 14),
+        EntryImageField(
+          images: images,
+          onChanged: onImagesChanged,
         ),
       ],
     );

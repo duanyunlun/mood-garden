@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../application/mood_garden_controller.dart';
+import '../../application/settings_controller.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/date_formatter.dart';
 import '../../domain/entities/mood_entry.dart';
-import '../../domain/entities/mood_tag.dart';
+import '../../domain/entities/tag_catalog.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/soft_card.dart';
 import 'widgets/garden_canvas.dart';
@@ -213,10 +214,13 @@ class _SummaryTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
+          // 用 Wrap 而非 Row：系统字体放大时「今日种下」这类标签会折到下一行，
+          // 而不是横向溢出（PRD 第 10 章无障碍要求文字大小可调节）。
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 5,
             children: <Widget>[
               Text(emoji, style: const TextStyle(fontSize: 14)),
-              const SizedBox(width: 5),
               Text(label, style: textTheme.labelSmall),
             ],
           ),
@@ -420,13 +424,15 @@ class _RecentEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final customTags =
+        context.watch<SettingsController>().settings.customTags;
 
     // sealed class 的穷尽 switch：新增记录类型时编译器会强制在此处处理。
     // 注意必须用 `HappyEntry e` 绑定变量才能访问子类字段——
     // 仅写 `HappyEntry()` 不会提升 entry 的静态类型。
     final (String emoji, String title, Color titleColor) = switch (entry) {
       HappyEntry e => (
-          MoodTag.presetById(e.tagId)?.emoji ?? '🌱',
+          TagCatalog.displayTag(e.tagId, customTags: customTags)?.emoji ?? '🌱',
           e.text.isEmpty ? '（没有写字，但记下了这一刻）' : e.text,
           AppColors.inkPrimary,
         ),

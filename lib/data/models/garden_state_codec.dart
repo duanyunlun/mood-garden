@@ -9,6 +9,7 @@ abstract final class GardenStateCodec {
   static const String _streakKey = 'streakDays';
   static const String _flowersKey = 'flowers';
   static const String _seedCountKey = 'seedCountBySpecies';
+  static const String _unlockedSpeciesKey = 'unlockedSpeciesIds';
   static const String _themeKey = 'themeId';
   static const String _lastRecordedKey = 'lastRecordedDay';
 
@@ -18,6 +19,7 @@ abstract final class GardenStateCodec {
       _streakKey: state.streakDays,
       _flowersKey: state.flowers.map(_flowerToMap).toList(growable: false),
       _seedCountKey: state.seedCountBySpecies,
+      _unlockedSpeciesKey: state.unlockedSpeciesIds.toList(growable: false),
       _themeKey: state.themeId,
       _lastRecordedKey: state.lastRecordedDay?.toIso8601String(),
     };
@@ -29,9 +31,20 @@ abstract final class GardenStateCodec {
       streakDays: _asInt(map[_streakKey]),
       flowers: _decodeFlowers(map[_flowersKey]),
       seedCountBySpecies: _decodeSeedCounts(map[_seedCountKey]),
+      unlockedSpeciesIds: _decodeUnlockedSpecies(map[_unlockedSpeciesKey]),
       themeId: map[_themeKey] as String? ?? GardenState.empty.themeId,
       lastRecordedDay: _decodeDay(map[_lastRecordedKey]),
     );
+  }
+
+  /// 已解锁花种。旧数据里没有这个字段，解码为空集合即可——
+  /// 解锁是向前累积的，缺字段只会让老用户少几个已解锁项，
+  /// 而它们会在下一次达到阈值时重新解锁。
+  static Set<String> _decodeUnlockedSpecies(Object? raw) {
+    if (raw is! List) {
+      return const <String>{};
+    }
+    return raw.whereType<String>().toSet();
   }
 
   static Map<String, Object?> _flowerToMap(Flower flower) {

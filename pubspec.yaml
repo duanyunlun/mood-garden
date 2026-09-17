@@ -3,8 +3,16 @@ description: "心情花园 —— 每一种情绪都有价值：开心的事被�
 publish_to: "none"
 
 # 版本号：语义化版本 + 构建号（build number）
+# ⚠️ 与 lib/core/constants/app_constants.dart 的 appVersion 手工保持一致。
+# 0.2.0：接入本地加密持久化（AES-256-GCM + 系统安全区托管密钥）。
+# 0.2.1：修复启动期黑屏（先出画面再装配存储）、补齐 iOS Keychain entitlement、
+#        新增 macOS 桌面端支持用于实测。
+# 0.2.2：清理界面上的开发描述文字——移除未实现功能的占位入口与内部优先级标记。
+# 0.3.0：补齐 PRD 剩余功能——图片输入（拍照/相册/多图，加密存储）、每日提醒、
+#        分享花园、自定义标签、字体大小、进化花种 / 季节限定 / 隐藏款、
+#        时光轴搜索筛选、色彩对比度无障碍、仪式音效、花园渲染上限。
 # 命名与最终产品名尚未定案（PRD 第 12 章待定项），当前沿用「心情花园」为临时代号。
-version: 0.1.0+1
+version: 0.3.0+5
 
 environment:
   sdk: ^3.13.0
@@ -20,10 +28,30 @@ dependencies:
   # 状态管理：轻量、官方推荐的 ChangeNotifier 方案，适合骨架期快速铺开
   provider: ^6.1.2
 
+  # --- 加密持久化三件套（PRD 第 10 章「数据安全与隐私」）---
+  # 取 App 私有沙盒目录，密文文件写入其中
+  path_provider: ^2.1.6
+  # 主密钥托管：iOS / macOS → Keychain，Android → Keystore
+  # 密钥刻意不与密文同处存放（见 docs/ARCHITECTURE.md 第 5 节）
+  flutter_secure_storage: ^11.2.0
+  # AES-256-GCM：纯 Dart 实现，无需平台原生加密库
+  cryptography: ^2.9.0
+  image_picker: ^1.2.3
+  share_plus: ^13.3.0
+  flutter_local_notifications: ^22.3.1
+  timezone: ^0.11.1
+  flutter_timezone: ^5.1.0
+  audioplayers: ^6.8.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # 桌面端集成测试：在真实平台后端上验证落盘与 Keychain
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
+  # 仅用于测试中替换系统安全区（Keychain / Keystore），不参与运行时
+  flutter_secure_storage_platform_interface: ^2.1.1
 
 flutter:
   uses-material-design: true
@@ -33,3 +61,6 @@ flutter:
   assets:
     - assets/illustrations/
     - assets/animations/
+    # 占位音效，由 tool/generate_audio_assets.py 合成（PRD 7.2.2 的「轻音效」）
+    # 正式音效替换同名文件即可，调用方零改动
+    - assets/audio/

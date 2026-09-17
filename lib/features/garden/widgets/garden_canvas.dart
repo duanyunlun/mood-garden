@@ -39,6 +39,19 @@ class GardenCanvas extends StatelessWidget {
   /// 点击回调。
   final VoidCallback? onTap;
 
+  /// 单次最多绘制多少株。
+  ///
+  /// 这个上限有两个理由，缺一不可：
+  /// - **性能**：几百个 Text 组件的布局与绘制是这一屏最重的开销，
+  ///   而首页每次 `setState` 都要重算（PRD 第 10 章的「性能」要求）；
+  /// - **可读性**：几百个 emoji 挤在 260dp 高的画布里本来就是一坨色块，
+  ///   画满反而看不出「花园」。
+  ///
+  /// 折中是只画最近种下的这一批（用户最关心的就是它们），
+  /// 并在底部补一行「还有 N 株」，信息不丢。
+  static const int maxRenderedPlants = 60;
+
+
   @override
   Widget build(BuildContext context) {
     final moment = now ?? DateTime.now();
@@ -81,6 +94,18 @@ class GardenCanvas extends StatelessWidget {
                           height: height * 0.24,
                           child: const _SoilLayer(),
                         ),
+                        // 被省略的株数。放在画布角上而不是植物床里，
+                        // 这样它不会被植物床的裁剪一起裁掉。
+                        if (flowers.length > GardenCanvas.maxRenderedPlants)
+                          Positioned(
+                            left: 10,
+                            top: 10,
+                            child: _HiddenPlantsBadge(
+                              hidden:
+                                  flowers.length -
+                                      GardenCanvas.maxRenderedPlants,
+                            ),
+                          ),
                         // 植物层
                         Positioned.fill(
                           child: Padding(
@@ -140,16 +165,27 @@ class _PlantBed extends StatelessWidget {
     final ordered = List<Flower>.of(flowers)
       ..sort((a, b) => a.plantedAt.compareTo(b.plantedAt));
 
+    final hidden = ordered.length - GardenCanvas.maxRenderedPlants;
+    // 只画最近种下的这一批。它们在列表末尾，而列表自上而下排布、
+    // 整块贴底对齐——所以即使真的画不下，被裁掉的也是最早的那些，
+    // 用户最关心的新花始终在画面里。
+    final visible = hidden > 0 ? ordered.sublist(hidden) : ordered;
+
     return Align(
       alignment: Alignment.bottomLeft,
-      child: Wrap(
-        spacing: 2,
-        runSpacing: 0,
-        alignment: WrapAlignment.start,
-        crossAxisAlignment: WrapCrossAlignment.end,
-        children: ordered
-            .map((flower) => _PlantSprite(flower: flower, now: now))
-            .toList(growable: false),
+      // 画布高度是固定的。植物多到铺不下时静默裁掉顶部（最早的那批），
+      // 而不是抛 RenderFlex overflow——花园是装饰性场景，
+      // 不该因为用户记录得多就把首页变成报错页。
+      child: ClipRect(
+        child: Wrap(
+          spacing: 2,
+          runSpacing: 0,
+          alignment: WrapAlignment.start,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: visible
+              .map((flower) => _PlantSprite(flower: flower, now: now))
+              .toList(growable: false),
+        ),
       ),
     );
   }
@@ -197,4 +233,26 @@ class _PlantSprite extends StatelessWidget {
 
   /// 让倾斜角度保持柔和。花园是治愈场景，不该出现夸张的歪斜。
   double tenderAngle(double raw) => raw;
+}
+
+/// 「还有 N 株在更早的地方」角标。
+class _HiddenPlantsBadge extends StatelessWidget {
+  const _HiddenPlantsBadge({required this.hidden});
+
+  final int hidden;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '还有 $hidden 株在更早的地方',
+        style: Theme.of(context).textTheme.labelSmall,
+      ),
+    );
+  }
 }

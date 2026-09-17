@@ -106,7 +106,11 @@ class _IgniteButtonState extends State<IgniteButton>
                     ? Color.lerp(
                         AppColors.mistyRoseSoft,
                         AppColors.flame,
-                        progress * 0.85,
+                        // 上限刻意只到 0.35：底色若一路烧成火苗色，
+                        // 上面的文字无论用深色还是浅色都读不清
+                        // （奶油白压火苗色只有 2.88:1，深棕也只有 3.40:1）。
+                        // 让底色始终保持在浅色区间，文字才能稳定达到 AA。
+                        progress * 0.35,
                       )
                     : AppColors.creamDeep,
                 borderRadius: BorderRadius.circular(AppTheme.pillRadius),
@@ -134,19 +138,22 @@ class _IgniteButtonState extends State<IgniteButton>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: <Widget>[
-                        Text(
-                          isActive ? '🔥' : '🔥',
-                          style: const TextStyle(fontSize: 18),
-                        ),
+                        const Text('🔥', style: TextStyle(fontSize: 18)),
                         const SizedBox(width: 9),
-                        Text(
-                          _labelFor(progress, enabled),
-                          style: textTheme.labelLarge?.copyWith(
-                            color: enabled
-                                ? (progress > 0.5
-                                    ? AppColors.inkInverse
-                                    : AppColors.mistyRoseDeep)
-                                : AppColors.inkTertiary,
+                        // Flexible：字体放大时按钮文案换行，而不是横向溢出
+                        // （PRD 第 10 章无障碍要求文字大小可调节）。
+                        Flexible(
+                          child: Text(
+                            _labelFor(progress, enabled),
+                            textAlign: TextAlign.center,
+                            style: textTheme.labelLarge?.copyWith(
+                              // 底色始终是浅色（见上面的 lerp 上限），
+                              // 所以文字固定用深色，不随进度变色——
+                              // 变色会让文字在中途某一刻正好落在对比度最低的组合上。
+                              color: enabled
+                                  ? AppColors.inkPrimary
+                                  : AppColors.inkTertiary,
+                            ),
                           ),
                         ),
                       ],

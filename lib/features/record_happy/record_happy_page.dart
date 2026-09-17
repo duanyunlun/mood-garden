@@ -1,11 +1,17 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../application/mood_garden_controller.dart';
+import '../../application/settings_controller.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/date_formatter.dart';
+import '../../domain/entities/tag_catalog.dart';
+import '../../shared/sound_feedback.dart';
+import '../../shared/widgets/entry_image_field.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/soft_card.dart';
 import 'widgets/mood_tag_selector.dart';
@@ -29,9 +35,13 @@ class RecordHappyPage extends StatefulWidget {
 class _RecordHappyPageState extends State<RecordHappyPage> {
   final TextEditingController _textController = TextEditingController();
 
-  String? _selectedTagId;
+  /// 选中的标签（含花种）。进化款、隐藏款、自定义标签的花种都由它携带。
+  SelectableTag? _selectedTag;
   DateTime _occurredAt = DateTime.now();
   bool _isSaving = false;
+
+  /// 用户新选的图片字节。保存时才交给控制器加密落盘。
+  List<Uint8List> _images = <Uint8List>[];
 
   /// 正在播放种子落地动画。
   bool _isLanding = false;
@@ -43,7 +53,7 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
   }
 
   bool get _hasContent =>
-      _textController.text.trim().isNotEmpty || _selectedTagId != null;
+      _textController.text.trim().isNotEmpty || _selectedTag != null;
 
   Future<void> _pickDateTime() async {
     final now = DateTime.now();
@@ -84,7 +94,8 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
   }
 
   Future<void> _save() async {
-    if (_selectedTagId == null) {
+    final selected = _selectedTag;
+    if (selected == null) {
       _toast('先选一个心情标签吧，它会决定种下什么花');
       return;
     }
@@ -99,14 +110,20 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
 
     try {
       final result = await controller.plantSeed(
-        tagId: _selectedTagId!,
+        tagId: selected.tag.id,
+        // 显式带上花种：进化款与自定义标签的对应关系不在预设表里。
+        speciesId: selected.tag.speciesId,
         text: _textController.text.trim(),
+        images: _images,
         occurredAt: _occurredAt,
       );
 
       if (!mounted) {
         return;
       }
+
+      // 声音与动画同时起：种子入土这一下要有回响（PRD 7.2.2 的「轻音效」）
+      playFeedback(context, (player) => player.playSeedLanded());
 
       // 步骤 5 + 7.1.2：播放种子落地反馈动画
       setState(() => _isLanding = true);
@@ -129,11 +146,16 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
     }
   }
 
-  /// 收集进度提示（PRD 7.1.2）。
+  /// 收集进度提示（PRD 7.1.2 + 7.1.3）。
   ///
   /// 文案示例：「向日葵第 7 颗种子，再种 3 颗会长出第一朵花」——
   /// 强化用户对「持续记录 = 持续收获」的心理预期。
+  ///
+  /// 若这一次恰好凑够阈值，额外给一段解锁提示：**解锁了却不说，
+  /// 等于没解锁**——用户根本不会知道图鉴里多了一种花。
   Future<void> _showProgressDialog(PlantSeedResult result) {
+    final unlocked = result.unlockedSpecies;
+
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -151,7 +173,7 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
             ),
             const SizedBox(height: 14),
             Text(
-              '种子已经入土',
+              unlocked.isEmpty ? '种子已经入土' : '它进化了',
               style: Theme.of(dialogContext).textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
@@ -161,6 +183,39 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
               textAlign: TextAlign.center,
               style: Theme.of(dialogContext).textTheme.bodyMedium,
             ),
+            if (unlocked.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.sageGreenTint,
+                  borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+                ),
+                child: Column(
+                  children: <Widget>[
+                    for (final species in unlocked) ...<Widget>[
+                      Text(
+                        '${species.emoji} 解锁了${species.name}',
+                        style: Theme.of(dialogContext)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(color: AppColors.sageGreenDeep),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '同类心情攒够了，下次记录可以选它的进化形态',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(dialogContext).textTheme.labelSmall,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.symmetric(
@@ -199,6 +254,11 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    // 标签列表要同时看花园进度（进化款 / 隐藏款是否解锁）与设置（自定义标签），
+    // 所以两个控制器都要订阅。
+    final controller = context.watch<MoodGardenController>();
+    final settings = context.watch<SettingsController>();
+    final selected = _selectedTag;
 
     return Scaffold(
       backgroundColor: AppColors.creamWhite,
@@ -225,31 +285,38 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
               ),
               const SizedBox(height: 18),
 
-              // 步骤 2：文字输入
+              // 步骤 2：文字输入 + 图片输入
+              // 两者放在同一张卡片里：它们共同构成「这次记录」，
+              // 拆成两张卡会让页面读起来像两个无关的表单。
               SoftCard(
-                child: TextField(
-                  controller: _textController,
-                  maxLines: 6,
-                  minLines: 4,
-                  maxLength: AppConstants.maxTextLength,
-                  onChanged: (_) => setState(() {}),
-                  style: textTheme.bodyLarge,
-                  decoration: InputDecoration(
-                    hintText: '今天有什么让你觉得，真好呀？',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    filled: false,
-                    counterStyle: textTheme.labelSmall,
-                    contentPadding: EdgeInsets.zero,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    TextField(
+                      controller: _textController,
+                      maxLines: 6,
+                      minLines: 4,
+                      maxLength: AppConstants.maxTextLength,
+                      onChanged: (_) => setState(() {}),
+                      style: textTheme.bodyLarge,
+                      decoration: InputDecoration(
+                        hintText: '今天有什么让你觉得，真好呀？',
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
+                        counterStyle: textTheme.labelSmall,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    EntryImageField(
+                      images: _images,
+                      onChanged: (images) => setState(() => _images = images),
+                    ),
+                  ],
                 ),
               ),
-
-              const SizedBox(height: 14),
-
-              // 步骤 2：图片输入
-              const _ImagePickerStub(),
 
               const SizedBox(height: 22),
 
@@ -261,8 +328,13 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
               ),
               const SizedBox(height: 12),
               MoodTagSelector(
-                selectedId: _selectedTagId,
-                onSelected: (id) => setState(() => _selectedTagId = id),
+                // 可选标签由花园进度推导：进化款、隐藏款、季节可用性都在里面。
+                // 自定义标签来自设置，因此这里要把两个来源合起来。
+                tags: controller.availableTags(
+                  customTags: settings.settings.customTags,
+                ),
+                selectedId: _selectedTag?.tag.id,
+                onSelected: (item) => setState(() => _selectedTag = item),
               ),
 
               const SizedBox(height: 22),
@@ -314,9 +386,7 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
           if (_isLanding)
             Positioned.fill(
               child: SeedLandingOverlay(
-                emoji: _selectedTagId == null
-                    ? '🌱'
-                    : (MoodTagSelectorEmoji.of(_selectedTagId!)),
+                emoji: selected?.tag.species?.emoji ?? '🌱',
               ),
             ),
         ],
@@ -337,76 +407,3 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
   }
 }
 
-/// 标签 emoji 查表助手。
-///
-/// 放在此处避免在页面里直接依赖 `MoodTag` 的完整对象。
-abstract final class MoodTagSelectorEmoji {
-  static String of(String tagId) {
-    for (final tag in _presets) {
-      if (tag.$1 == tagId) {
-        return tag.$2;
-      }
-    }
-    return '🌱';
-  }
-
-  static const List<(String, String)> _presets = <(String, String)>[
-    ('gratitude', '🌻'),
-    ('surprise', '🌷'),
-    ('companionship', '💜'),
-    ('achievement', '🌾'),
-    ('food', '🌸'),
-    ('calm', '🍀'),
-  ];
-}
-
-/// 图片选择占位组件（PRD 7.1.1 步骤 2：相册选择 / 拍照，支持多图）。
-///
-/// ⚠️ 骨架期未接入 `image_picker`，点击仅提示。
-/// 正式实现需要同时解决「图片加密存储」问题（PRD 第 10 章），
-/// 因此这里刻意留白而不做半成品实现。
-class _ImagePickerStub extends StatelessWidget {
-  const _ImagePickerStub();
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return SoftCard(
-      onTap: () {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text('图片选择待接入相册权限与加密存储后开放'),
-            ),
-          );
-      },
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Row(
-        children: <Widget>[
-          const Text('🖼️', style: TextStyle(fontSize: 20)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text('加张照片', style: textTheme.titleMedium),
-                const SizedBox(height: 2),
-                Text(
-                  '最多 ${AppConstants.maxImagesPerEntry} 张',
-                  style: textTheme.labelSmall,
-                ),
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.add_circle_outline,
-            size: 22,
-            color: AppColors.warmApricot,
-          ),
-        ],
-      ),
-    );
-  }
-}

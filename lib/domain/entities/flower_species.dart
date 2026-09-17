@@ -186,6 +186,11 @@ class FlowerSpecies {
   static List<FlowerSpecies> byRarity(SpeciesRarity rarity) =>
       catalog.where((s) => s.rarity == rarity).toList(growable: false);
 
+  /// 某个基础花种对应的进化形态。没有进化款时返回空列表。
+  static List<FlowerSpecies> evolvedFrom(String baseSpeciesId) => catalog
+      .where((s) => s.evolvedFromId == baseSpeciesId)
+      .toList(growable: false);
+
   @override
   String toString() => 'FlowerSpecies($id, $name)';
 }

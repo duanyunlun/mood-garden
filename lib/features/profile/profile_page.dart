@@ -5,10 +5,13 @@ import '../../application/mood_garden_controller.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../application/settings_controller.dart';
+import '../../data/datasources/storage_bootstrap.dart';
 import '../../domain/entities/garden_theme.dart';
 import '../../domain/entities/mood_tag.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/soft_card.dart';
+import 'widgets/settings_sheets.dart';
 
 /// Tab4 我的（PRD 第 6 章信息架构 / Tab4 定义）。
 ///
@@ -26,13 +29,17 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 存储形态在启动装配后不再变化；用 watch 保持与 Provider 的语义一致。
+    final storage = context.watch<StorageBootstrap>();
+    final settings = context.watch<SettingsController>();
+
     return Scaffold(
       backgroundColor: AppColors.creamWhite,
       body: SafeArea(
         bottom: false,
         child: Consumer<MoodGardenController>(
           builder: (context, controller, _) {
-            if (controller.isLoading) {
+            if (controller.isLoading || settings.isLoading) {
               return const Center(
                 child: CircularProgressIndicator(
                   color: AppColors.warmApricot,
@@ -79,10 +86,11 @@ class ProfilePage extends StatelessWidget {
                   subtitle: '标签决定每次记录种下什么花',
                 ),
                 const SizedBox(height: 12),
-                const _TagManager(),
+                _TagManager(settings: settings),
                 const SizedBox(height: 22),
 
-                // 提醒 / 分享 / 无障碍 / 隐私
+                // 每一条都真的能用：点进去立刻生效或真的发出分享。
+                // 未实现的功能不在这里占位（排期见 docs/ROADMAP.md）。
                 const SectionHeader(
                   title: '设置',
                   emoji: '⚙️',
@@ -93,46 +101,47 @@ class ProfilePage extends StatelessWidget {
                   child: Column(
                     children: <Widget>[
                       _SettingTile(
+                        emoji: '🔠',
+                        title: '字体大小',
+                        subtitle: settings.textScale == 1.0
+                            ? '跟随系统（当前未额外放大）'
+                            : '比系统再放大 ${((settings.textScale - 1) * 100).round()}%',
+                        onTap: () => showTextScaleSheet(context, settings),
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _SettingTile(
                         emoji: '🔔',
                         title: '每日提醒',
-                        subtitle: '温柔文案的推送提醒，养成记录习惯',
-                        badge: 'P1',
-                        onTap: () => _showPending(context, '每日提醒'),
+                        subtitle: settings.settings.reminderEnabled
+                            ? '每天 ${settings.reminderTimeLabel} 轻轻提醒你'
+                            : '关着。开一个，别让今天白白过去',
+                        onTap: () => showReminderSheet(context, settings),
                       ),
-                      const Divider(
-                        height: 1,
-                        indent: 16,
-                        endIndent: 16,
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _SettingTile(
+                        emoji: settings.settings.soundEnabled ? '🔊' : '🔇',
+                        title: '仪式音效',
+                        subtitle: settings.settings.soundEnabled
+                            ? '种子入土与点燃纸卷时有轻音效'
+                            : '已关闭。适合在安静的场合记录',
+                        onTap: () => settings.setSoundEnabled(
+                          !settings.settings.soundEnabled,
+                        ),
                       ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _SettingTile(
                         emoji: '📤',
-                        title: '分享中心',
-                        subtitle: '把花园全景或图鉴分享出去',
-                        badge: 'P2',
-                        onTap: () => _showPending(context, '分享中心'),
+                        title: '分享花园',
+                        subtitle: '把花园现在的样子分享出去',
+                        onTap: () => showShareSheet(context, controller),
                       ),
-                      const Divider(
-                        height: 1,
-                        indent: 16,
-                        endIndent: 16,
-                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _SettingTile(
-                        emoji: '🔍',
-                        title: '无障碍',
-                        subtitle: '字体大小、色彩对比度',
-                        badge: '待设计',
-                        onTap: () => _showPending(context, '无障碍设置'),
-                      ),
-                      const Divider(
-                        height: 1,
-                        indent: 16,
-                        endIndent: 16,
-                      ),
-                      _SettingTile(
-                        emoji: '🔒',
+                        emoji: storage.isPersistent ? '🔒' : '⚠️',
                         title: '隐私与数据',
-                        subtitle: '本地加密、云同步开关、清除数据',
-                        badge: '待实现',
+                        subtitle: storage.isPersistent
+                            ? '记录已加密保存在本机'
+                            : '记录未能保存到本机',
                         onTap: () => _showPrivacySheet(context, controller),
                       ),
                     ],
@@ -149,18 +158,12 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  void _showPending(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text('$feature 尚未实现，已在 README 路线图中登记')),
-      );
-  }
-
   void _showPrivacySheet(
     BuildContext context,
     MoodGardenController controller,
   ) {
+    final storage = context.read<StorageBootstrap>();
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.creamWhite,
@@ -182,9 +185,12 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '骨架期使用内存存储：数据不落盘、不加密，关闭 App 即清空。\n'
-                '正式实现需接入 iOS Keychain 托管密钥 + 本地加密存储，'
-                '并落实「灰烬内容物理不可恢复」的技术承诺（PRD 第 10 章）。',
+                storage.isPersistent
+                    ? '记录会加密保存在这台设备上，密钥由系统安全区单独保管，'
+                          '不与记录内容放在一起。\n'
+                          '烧掉的纸卷在写入时就已擦除原文，之后任何方式都无法再读出。'
+                    : '⚠️ 记录目前无法保存到本机：关闭 App 后内容会丢失。\n'
+                          '技术原因：${storage.degradedReason ?? '未知'}',
                 style: Theme.of(sheetContext).textTheme.bodySmall,
               ),
               const SizedBox(height: 18),
@@ -217,7 +223,6 @@ class _GardenOverviewCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final garden = controller.garden;
     final now = DateTime.now();
-    final stages = garden.stageDistributionAt(now);
 
     return SoftCard(
       color: AppColors.warmApricotTint,
@@ -258,7 +263,7 @@ class _GardenOverviewCard extends StatelessWidget {
               ),
               _StatChip(
                 label: '已开花',
-                value: '${stages.values.isNotEmpty ? stages.values.reduce((a, b) => a + b) : 0}',
+                value: '${garden.bloomingCountAt(now)}',
               ),
               _StatChip(
                 label: '养分',
@@ -392,14 +397,18 @@ class _ThemePicker extends StatelessWidget {
 
 /// 快捷标签管理（PRD Tab4）。
 ///
-/// 骨架期展示内置预设标签；自定义标签的增删改待产品明确交互后实现
-/// （PRD 第 12 章：标签对照表完整细节待定）。
+/// 预设标签只读，自定义标签可增可删——这条区分是有意的：
+/// 删掉一个预设标签会让历史记录里的 tagId 找不到对应的花种，
+/// 那些记录就会显示成「自定义」并长成向日葵。
 class _TagManager extends StatelessWidget {
-  const _TagManager();
+  const _TagManager({required this.settings});
+
+  final SettingsController settings;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final tags = settings.allTags;
 
     return SoftCard(
       child: Column(
@@ -408,38 +417,126 @@ class _TagManager extends StatelessWidget {
           Wrap(
             spacing: 10,
             runSpacing: 10,
-            children: MoodTag.presets.map((tag) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 8,
+            children: <Widget>[
+              for (final tag in tags)
+                _TagChip(
+                  tag: tag,
+                  onDelete: tag.isCustom
+                      ? () => settings.removeCustomTag(tag.id)
+                      : null,
                 ),
-                decoration: BoxDecoration(
-                  color: AppColors.creamSoft,
-                  borderRadius: BorderRadius.circular(AppTheme.pillRadius),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(tag.emoji, style: const TextStyle(fontSize: 14)),
-                    const SizedBox(width: 6),
-                    Text(tag.label, style: textTheme.labelMedium),
-                    const SizedBox(width: 6),
-                    Text(
-                      '→ ${tag.species?.name ?? '?'}',
-                      style: textTheme.labelSmall,
-                    ),
-                  ],
-                ),
-              );
-            }).toList(growable: false),
+              _AddTagChip(
+                onTap: () => showNewTagDialog(context, settings),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(
-            '自定义标签功能待 PRD 第 12 章「标签-花种对照表」定案后开放',
+            '预设标签不能删；带 × 的是你自己加的。',
             style: textTheme.labelSmall,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 一个标签，右侧可选删除按钮。
+class _TagChip extends StatelessWidget {
+  const _TagChip({required this.tag, this.onDelete});
+
+  final MoodTag tag;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(13, 8, onDelete == null ? 13 : 6, 8),
+      decoration: BoxDecoration(
+        color: AppColors.creamSoft,
+        borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(tag.emoji, style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 6),
+          Text(tag.label, style: textTheme.labelMedium),
+          const SizedBox(width: 6),
+          Text(
+            '→ ${tag.species?.name ?? '?'}',
+            style: textTheme.labelSmall,
+          ),
+          if (onDelete != null) ...<Widget>[
+            const SizedBox(width: 2),
+            Semantics(
+              button: true,
+              label: '删除标签 ${tag.label}',
+              child: InkWell(
+                onTap: onDelete,
+                customBorder: const CircleBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.all(5),
+                  child: Icon(
+                    Icons.close,
+                    size: 13,
+                    color: AppColors.inkTertiary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 「＋ 新建标签」。
+class _AddTagChip extends StatelessWidget {
+  const _AddTagChip({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Semantics(
+      button: true,
+      label: '新建心情标签',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+            border: Border.all(
+              color: AppColors.warmApricotSoft,
+              style: BorderStyle.solid,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(
+                Icons.add,
+                size: 14,
+                color: AppColors.warmApricotDeep,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                '新建标签',
+                style: textTheme.labelMedium?.copyWith(
+                  color: AppColors.warmApricotDeep,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -452,13 +549,11 @@ class _SettingTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.badge,
   });
 
   final String emoji;
   final String title;
   final String subtitle;
-  final String? badge;
   final VoidCallback onTap;
 
   @override
@@ -483,22 +578,6 @@ class _SettingTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (badge != null)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.creamSoft,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  badge!,
-                  style: textTheme.labelSmall?.copyWith(fontSize: 10),
-                ),
-              ),
-            const SizedBox(width: 6),
             const Icon(
               Icons.chevron_right,
               size: 18,
@@ -530,13 +609,8 @@ class _VersionFooter extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'v0.1.0 · 骨架版本',
+            'v${AppConstants.appVersion}',
             style: textTheme.labelSmall,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '产品命名待定（谢谢日记 / 心情花园）',
-            style: textTheme.labelSmall?.copyWith(fontSize: 10),
           ),
         ],
       ),

@@ -127,4 +127,12 @@ abstract final class MoodTagId {
   static const String achievement = 'achievement';
   static const String food = 'food';
   static const String calm = 'calm';
+
+  /// 自定义标签的 id 前缀。
+  ///
+  /// 用它区分内置标签与用户创建的标签——例如删除时只允许删后者。
+  static const String customPrefix = 'custom';
+
+  /// 隐藏款标签的 id 前缀（连续记录达标后出现，PRD 7.1.3）。
+  static const String hiddenPrefix = 'hidden';
 }
