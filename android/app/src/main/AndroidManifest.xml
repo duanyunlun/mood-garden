@@ -6,7 +6,7 @@
          ⚠️ PRD 第 12 章：最终命名（谢谢日记 / 心情花园）尚未定案，
          定案后需同步 AppConstants.appName 与 iOS 的 Info.plist。 -->
     <application
-        android:label="心情花园"
+        android:label="谢谢日记"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

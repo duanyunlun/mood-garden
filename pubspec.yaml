@@ -58,6 +58,13 @@ flutter:
 
   # 手绘插画资源位（PRD 11.3：花园、花朵、纸卷、种子均采用手绘插画风格）
   # 资源文件待设计团队产出后放入，目录已建好占位
+  # 手写体：仅用于标题 / 按钮等装饰性文字，正文保持系统字体。
+  # 体积约 5.6MB —— 中文字体先天就大；许可见 assets/fonts/OFL.txt。
+  fonts:
+    - family: MaShanZheng
+      fonts:
+        - asset: assets/fonts/MaShanZheng-Regular.ttf
+
   assets:
     - assets/illustrations/
     - assets/animations/

@@ -3,11 +3,16 @@
 /// ⚠️ 本文件中标注「待产品确认」的数值来自 PRD 示例或为骨架期占位值，
 /// 需在正式评审时由产品负责人补充确认（对应 PRD 第 12 章「待定事项」）。
 abstract final class AppConstants {
-  /// 产品名（临时代号）。
+  /// 产品名。
   ///
-  /// PRD 第 12 章待定项：「谢谢日记」与「心情花园」的最终取舍尚未确定，
-  /// 当前沿用「心情花园」。定案后需同步修改此处与 `pubspec.yaml` 的 `name`。
-  static const String appName = '心情花园';
+  /// PRD 第 12 章把「谢谢日记 / 心情花园」列为待定项。
+  /// 原型 v5 通篇使用**「谢谢日记」**（如「谢谢日记 的花园」），
+  /// 因此界面文案统一采用它。
+  ///
+  /// ⚠️ 仅改显示名：包名 `com.moodgarden.mood_garden`、
+  /// Dart package `mood_garden`、bundle id 一律不动——
+  /// 它们会影响既有安装、签名与商店记录，属于另一件需要单独决策的事。
+  static const String appName = '谢谢日记';
 
   /// 产品 Slogan（PRD 2.2 核心心智）。
   static const String slogan = '每一种情绪都有价值';

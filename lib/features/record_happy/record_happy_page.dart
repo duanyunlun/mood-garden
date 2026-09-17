@@ -400,7 +400,7 @@ class _RecordHappyPageState extends State<RecordHappyPage> {
         ),
         child: FilledButton(
           onPressed: _isSaving ? null : _save,
-          child: Text(_isSaving ? '正在种下…' : '种下这颗种子'),
+          child: Text(_isSaving ? '正在种下…' : '收进花园'),
         ),
       ),
     );

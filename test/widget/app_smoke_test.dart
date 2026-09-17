@@ -226,7 +226,8 @@ void main() {
 
       expect(find.text('这是什么心情？'), findsOneWidget);
       expect(find.text('什么时候的事？'), findsOneWidget);
-      expect(find.text('种下这颗种子'), findsOneWidget);
+      // 文案取自原型 v5 的「收进花园」（原为「种下这颗种子」）
+      expect(find.text('收进花园'), findsOneWidget);
     });
 
     testWidgets('记录开心事页展示全部预设心情标签', (WidgetTester tester) async {
