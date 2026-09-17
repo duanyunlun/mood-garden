@@ -11,6 +11,7 @@ import '../../domain/entities/mood_entry.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/soft_card.dart';
 import '../codex/widgets/codex_sections.dart';
+import 'widgets/petal_bud.dart';
 import '../garden/widgets/garden_canvas.dart';
 import 'garden_view_page.dart';
 
@@ -57,7 +58,7 @@ class PetalsPage extends StatelessWidget {
               ),
               children: <Widget>[
                 Text(
-                  '我的花园',
+                  '我的花瓣',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const SizedBox(height: 6),
@@ -65,6 +66,11 @@ class PetalsPage extends StatelessWidget {
                   '每一片花瓣，都是你认真记下的一天',
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
+                const SizedBox(height: 16),
+
+                // 花苞：花瓣拼合的可视化（原型 .bud-card）
+                _BudCard(controller: controller),
+
                 const SizedBox(height: 16),
 
                 // 花园实景：一眼看到自己攒下的东西
@@ -79,9 +85,9 @@ class PetalsPage extends StatelessWidget {
 
                 const SizedBox(height: 26),
                 const SectionHeader(
-                  title: '各花种进度',
-                  emoji: '🌱',
-                  subtitle: '同类心情记够数量，就会开出对应的花',
+                  title: '各花种花瓣',
+                  emoji: '🌸',
+                  subtitle: '一天记满 3 件收获一片花瓣，攒够 5 片开出一朵花',
                 ),
                 const SizedBox(height: 12),
                 _SpeciesProgress(controller: controller, now: now),
@@ -98,6 +104,54 @@ class PetalsPage extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// 花苞卡片：五片花瓣逐片点亮 + 一句「还差几片」。
+///
+/// 文案取自原型 `.bud-hint`：「花苞拼合 3/5 · 再攒 2 片，就拼成一朵花」。
+class _BudCard extends StatelessWidget {
+  const _BudCard({required this.controller});
+
+  final MoodGardenController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final garden = controller.garden;
+    final lit = garden.budProgress;
+    final until = garden.petalsUntilBloom;
+
+    // 花瓣颜色跟着最近一次收获的花种走；还没有花瓣时用品牌色。
+    final recent = garden.petalStockBySpecies.entries
+        .where((e) => e.value > 0)
+        .lastOrNull;
+    final color = recent == null
+        ? AppColors.warmApricot
+        : speciesColorOf(recent.key);
+
+    return SoftCard(
+      child: Column(
+        children: <Widget>[
+          PetalBud(lit: lit, petalColor: color),
+          const SizedBox(height: 10),
+          Text(
+            '花苞拼合 $lit / ${AppConstants.petalsPerBloom}',
+            style: textTheme.labelMedium?.copyWith(
+              color: AppColors.warmApricotDeep,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            until == AppConstants.petalsPerBloom
+                ? '花苞还是空的，记点小事让它鼓起来'
+                : '再攒 $until 片，就拼成一朵花',
+            textAlign: TextAlign.center,
+            style: textTheme.labelSmall,
+          ),
+        ],
       ),
     );
   }
@@ -322,7 +376,9 @@ class _SpeciesRow extends StatelessWidget {
               child: Text(species.name, style: textTheme.titleMedium),
             ),
             Text(
-              inBloom > 0 ? '已绽放 $inBloom 朵' : '还差 ${AppConstants.petalsPerBloom - into} 颗',
+              inBloom > 0
+                  ? '已绽放 $inBloom 朵 · 花瓣 $into'
+                  : '花瓣 $into / ${AppConstants.petalsPerBloom}',
               style: textTheme.labelSmall,
             ),
           ],
@@ -341,5 +397,29 @@ class _SpeciesRow extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+/// 花种对应的花瓣颜色。
+///
+/// 原型里每个花种有自己的花瓣图（`assets/petals/<species>.png`）。
+/// 插画未到位前，先用各花种色系的代表色——标签决定花瓣颜色的语义保持不变。
+Color speciesColorOf(String speciesId) {
+  switch (speciesId) {
+    case FlowerSpeciesId.sunflower:
+    case FlowerSpeciesId.goldenSunflower:
+      return AppColors.warmApricot;
+    case FlowerSpeciesId.tulip:
+      return AppColors.mistyRose;
+    case FlowerSpeciesId.lavender:
+      return const Color(0xFFB9A7D6);
+    case FlowerSpeciesId.wheat:
+      return AppColors.nutrientGold;
+    case FlowerSpeciesId.sakura:
+      return const Color(0xFFF4C2CE);
+    case FlowerSpeciesId.clover:
+      return AppColors.sageGreen;
+    default:
+      return AppColors.warmApricot;
   }
 }

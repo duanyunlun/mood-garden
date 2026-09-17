@@ -11,7 +11,7 @@ import 'package:mood_garden/data/repositories/local_settings_repository.dart';
 import 'package:mood_garden/data/repositories/local_garden_repository.dart';
 import 'package:mood_garden/domain/repositories/sound_player.dart';
 import 'package:mood_garden/domain/entities/mood_tag.dart';
-import 'package:mood_garden/features/codex/codex_page.dart';
+import 'package:mood_garden/features/petals/petals_page.dart';
 import 'package:mood_garden/features/profile/profile_page.dart';
 
 /// 应用级冒烟测试。
@@ -157,12 +157,14 @@ void main() {
       await tester.tap(find.text('花园').last);
       await tester.pumpAndSettle();
 
-      expect(find.text('常见花种'), findsOneWidget);
+      // 图鉴在花瓣页底部（上面依次是花苞、花园实景、统计、各花种花瓣），
+      // ListView 懒加载，不滚过去就不会被构建。
+      await scrollToInPage(tester, find.text('常见花种'), PetalsPage);
 
-      await scrollToInPage(tester, find.text('进化与隐藏款'), CodexPage);
+      await scrollToInPage(tester, find.text('进化与隐藏款'), PetalsPage);
       expect(find.text('进化与隐藏款'), findsOneWidget);
 
-      await scrollToInPage(tester, find.text('季节限定'), CodexPage);
+      await scrollToInPage(tester, find.text('季节限定'), PetalsPage);
       // 「季节限定」既是分区标题、也是稀有度角标文案，会匹配到多个
       expect(find.text('季节限定'), findsWidgets);
     });
@@ -173,11 +175,12 @@ void main() {
       await tester.tap(find.text('花园').last);
       await tester.pumpAndSettle();
 
+      await scrollToInPage(tester, find.text('向日葵'), PetalsPage);
       expect(find.text('向日葵'), findsOneWidget);
       expect(find.text('郁金香'), findsOneWidget);
       expect(find.text('薰衣草'), findsOneWidget);
 
-      await scrollToInPage(tester, find.text('樱花'), CodexPage);
+      await scrollToInPage(tester, find.text('樱花'), PetalsPage);
       expect(find.text('樱花'), findsOneWidget);
     });
 
