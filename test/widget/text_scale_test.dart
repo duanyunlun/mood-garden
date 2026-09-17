@@ -17,7 +17,9 @@ import 'package:mood_garden/domain/entities/flower_species.dart';
 import 'package:mood_garden/domain/entities/garden_state.dart';
 import 'package:mood_garden/domain/entities/mood_entry.dart';
 import 'package:mood_garden/domain/entities/mood_tag.dart';
-import 'package:mood_garden/features/garden/garden_home_page.dart';
+import 'package:mood_garden/features/record_happy/record_happy_page.dart';
+import 'package:mood_garden/features/record_unhappy/record_unhappy_page.dart';
+import 'package:mood_garden/features/record_home/record_home_page.dart';
 import 'package:mood_garden/features/timeline/date_detail_page.dart';
 
 /// 无障碍回归测试（PRD 第 10 章）。
@@ -162,6 +164,10 @@ void main() {
     required Type pageType,
   }) async {
     if (target.evaluate().isNotEmpty) {
+      // 找到了不等于点得到：放大字体后目标可能正好被底部导航栏压住，
+      // tap 的命中点会落到导航栏上。ensureVisible 把它滚进完全可见的区域。
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
       return;
     }
     await tester.scrollUntilVisible(
@@ -178,14 +184,14 @@ void main() {
   }
 
   group('文字放大 ${largeTextScale}x 下不溢出（PRD 第 10 章无障碍）', () {
-    testWidgets('花园首页', (WidgetTester tester) async {
+    testWidgets('记录首页（Tab1）', (WidgetTester tester) async {
       await pumpSeededApp(tester);
-      expectNoLayoutError(tester, '花园首页');
+      expectNoLayoutError(tester, '记录首页');
     });
 
     testWidgets('时光轴周视图与月视图', (WidgetTester tester) async {
       await pumpSeededApp(tester);
-      await openTab(tester, '时光轴');
+      await openTab(tester, '时光');
       expectNoLayoutError(tester, '时光轴默认（月）视图');
 
       await tester.tap(find.text('周'));
@@ -197,7 +203,7 @@ void main() {
       WidgetTester tester,
     ) async {
       await pumpSeededApp(tester);
-      await openTab(tester, '时光轴');
+      await openTab(tester, '时光');
 
       await tester.tap(find.text('年'));
       await tester.pumpAndSettle();
@@ -211,7 +217,7 @@ void main() {
 
     testWidgets('花之图鉴', (WidgetTester tester) async {
       await pumpSeededApp(tester);
-      await openTab(tester, '图鉴');
+      await openTab(tester, '花园');
       expectNoLayoutError(tester, '花之图鉴');
     });
 
@@ -224,30 +230,33 @@ void main() {
     testWidgets('记录开心事页', (WidgetTester tester) async {
       await pumpSeededApp(tester);
 
-      final entry = find.text('种下开心事');
-      await scrollTo(tester, entry, pageType: GardenHomePage);
+      final entry = find.text('开心的事');
+      await scrollTo(tester, entry, pageType: RecordHomePage);
       await tester.tap(entry);
       await tester.pumpAndSettle();
 
-      expect(find.text('这是什么心情？'), findsOneWidget, reason: '应已进入记录页');
+      // 断言页面类型而不是某段文字：放大字体后页面内容变长，
+      // 首屏之外的 widget 不会被懒加载的 ListView 构建，
+      // 按文字断言会得到「Found 0」这种与真实问题无关的假失败。
+      expect(find.byType(RecordHappyPage), findsOneWidget, reason: '应已进入记录页');
       expectNoLayoutError(tester, '记录开心事页');
     });
 
     testWidgets('情绪纸卷页', (WidgetTester tester) async {
       await pumpSeededApp(tester);
 
-      final entry = find.text('点燃纸卷');
-      await scrollTo(tester, entry, pageType: GardenHomePage);
+      final entry = find.text('难过的事');
+      await scrollTo(tester, entry, pageType: RecordHomePage);
       await tester.tap(entry);
       await tester.pumpAndSettle();
 
-      expect(find.text('情绪纸卷'), findsWidgets, reason: '应已进入纸卷页');
+      expect(find.byType(RecordUnhappyPage), findsOneWidget, reason: '应已进入纸卷页');
       expectNoLayoutError(tester, '情绪纸卷页');
     });
 
     testWidgets('日期详情页（含灰烬封条）', (WidgetTester tester) async {
       await pumpSeededApp(tester);
-      await openTab(tester, '时光轴');
+      await openTab(tester, '时光');
 
       // 月视图里点「今天」那一格进入日期详情
       final today = DateTime.now().day;

@@ -14,7 +14,7 @@ import 'package:mood_garden/domain/repositories/sound_player.dart';
 import 'package:mood_garden/domain/entities/flower.dart';
 import 'package:mood_garden/domain/entities/flower_species.dart';
 import 'package:mood_garden/domain/entities/garden_state.dart';
-import 'package:mood_garden/features/codex/codex_page.dart';
+import 'package:mood_garden/features/codex/widgets/codex_sections.dart';
 
 /// 图鉴收集度口径测试（PRD Tab3）。
 ///
@@ -59,7 +59,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('图鉴'));
+    await tester.tap(find.text('花园').last);
+    await tester.pumpAndSettle();
+
+    // 图鉴已并入花园页（原型 v5），位于该页下半部分。
+    // ListView 懒加载，不滚过去就不会被构建。
+    await tester.scrollUntilVisible(
+      find.byType(CodexSections),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.pumpAndSettle();
   }
 
@@ -98,7 +107,8 @@ void main() {
       ),
     );
 
-    expect(find.byType(CodexPage), findsOneWidget);
+    // 图鉴已并入花园页（原型 v5），内容组件仍是 CodexSections
+    expect(find.byType(CodexSections), findsOneWidget);
 
     // 只有向日葵开过花 → 顶部只能算 1 种
     expect(

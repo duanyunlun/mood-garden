@@ -82,39 +82,60 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('启动与信息架构（PRD 第 6 章）', () {
-    testWidgets('启动后展示花园首页与四个一级 Tab', (WidgetTester tester) async {
+  group('启动与信息架构（原型 v5）', () {
+    testWidgets('启动后停在记录页，四个一级 Tab 为 记录 / 时光 / 花园 / 我的',
+        (WidgetTester tester) async {
       await pumpApp(tester);
 
-      expect(find.text('花园'), findsOneWidget);
-      expect(find.text('时光轴'), findsWidgets);
-      expect(find.text('图鉴'), findsOneWidget);
+      // 记录页是进入 App 的第一屏（原型 screen-home）
+      expect(find.text('今天，有什么\n想记下来的吗？'), findsOneWidget);
+
+      // 四个 Tab 标签
+      expect(find.text('记录'), findsWidgets);
+      expect(find.text('时光'), findsWidgets);
+      expect(find.text('花园'), findsWidgets);
       expect(find.text('我的'), findsWidgets);
+
+      // 图鉴已并入花园，不再是独立 Tab
+      expect(find.text('图鉴'), findsNothing);
     });
 
-    testWidgets('花园首页展示两个主入口按钮', (WidgetTester tester) async {
+    testWidgets('记录页展示两个记录入口', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      expect(find.text('种下开心事'), findsOneWidget);
-      expect(find.text('点燃纸卷'), findsOneWidget);
+      expect(find.text('开心的事'), findsOneWidget);
+      expect(find.text('难过的事'), findsOneWidget);
+      expect(find.text('记下来，会开出一片花瓣'), findsOneWidget);
+      expect(find.text('写下来，然后烧掉它'), findsOneWidget);
     });
 
     testWidgets('新用户看到空花园引导，而非空白页', (WidgetTester tester) async {
       await pumpApp(tester);
 
+      await tester.tap(find.text('花园').last);
+      await tester.pumpAndSettle();
+
       expect(find.text('这里还是一片空地'), findsOneWidget);
     });
 
-    testWidgets('花园首页展示养分值进度条（PRD 7.3 常驻展示）', (WidgetTester tester) async {
+    testWidgets('花园页展示养分与收集进度（PRD 7.3 常驻展示）', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      expect(find.text('花园养分'), findsOneWidget);
+      await tester.tap(find.text('花园').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('养分'), findsOneWidget);
+      expect(find.text('已绽放'), findsOneWidget);
+      expect(find.text('已释放'), findsOneWidget);
     });
 
     testWidgets('展示产品心智文案', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      expect(find.text('开心的事被温柔地收藏，不开心的事被温柔地转化'), findsOneWidget);
+      expect(
+        find.textContaining('开心的事被温柔地收藏'),
+        findsOneWidget,
+      );
     });
   });
 
@@ -122,7 +143,7 @@ void main() {
     testWidgets('切换到时光轴', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('时光轴').last);
+      await tester.tap(find.text('时光').last);
       await tester.pumpAndSettle();
 
       expect(find.text('周'), findsOneWidget);
@@ -133,7 +154,7 @@ void main() {
     testWidgets('切换到花之图鉴并展示三个分区', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('图鉴').first);
+      await tester.tap(find.text('花园').last);
       await tester.pumpAndSettle();
 
       expect(find.text('常见花种'), findsOneWidget);
@@ -149,7 +170,7 @@ void main() {
     testWidgets('图鉴展示 PRD 7.1.1 举例的花种', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('图鉴').first);
+      await tester.tap(find.text('花园').last);
       await tester.pumpAndSettle();
 
       expect(find.text('向日葵'), findsOneWidget);
@@ -221,7 +242,7 @@ void main() {
         (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('种下开心事'));
+      await tester.tap(find.text('开心的事'));
       await tester.pumpAndSettle();
 
       expect(find.text('这是什么心情？'), findsOneWidget);
@@ -233,7 +254,7 @@ void main() {
     testWidgets('记录开心事页展示全部预设心情标签', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('种下开心事'));
+      await tester.tap(find.text('开心的事'));
       await tester.pumpAndSettle();
 
       for (final tag in MoodTag.presets) {
@@ -244,7 +265,7 @@ void main() {
     testWidgets('从首页进入情绪纸卷页（PRD 7.2.1）', (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('点燃纸卷'));
+      await tester.tap(find.text('难过的事'));
       await tester.pumpAndSettle();
 
       expect(find.text('写给自己的话'), findsOneWidget);
@@ -256,7 +277,7 @@ void main() {
         (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('点燃纸卷'));
+      await tester.tap(find.text('难过的事'));
       await tester.pumpAndSettle();
 
       expect(
@@ -269,7 +290,7 @@ void main() {
         (WidgetTester tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('点燃纸卷'));
+      await tester.tap(find.text('难过的事'));
       await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.delete_outline), findsNothing);

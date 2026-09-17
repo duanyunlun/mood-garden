@@ -39,6 +39,13 @@ abstract final class DateFormatter {
       _weekdayNames[(date.weekday - 1) % 7];
 
   /// `周一 14:30`
+  /// 记录首页顶部的日期抬头，例如「9月17日 · 周四」。
+  ///
+  /// 原型这里是「9月17日 · 晴 · 微风」，但天气需要额外数据源，
+  /// 而这里占位一个假的「晴」是不诚实的——宁可不写。
+  static String homeHeadline(DateTime date) =>
+      '${monthDay(date)} · ${weekday(date)}';
+
   static String weekdayWithTime(DateTime date) =>
       '${weekday(date)} ${timeOfDay(date)}';
 
