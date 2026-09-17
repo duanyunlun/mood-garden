@@ -115,11 +115,100 @@
 
 **决策**：`LocalStore` 只负责键值存取（`Future<String?> read(key)`），不关心内容形态与加密。
 
-**理由**：PRD 第 10 章要求本地加密，但具体方案（SQLCipher / 系统安全区 / 文件加密）
-尚未定案。把存储与加密解耦后，无论最终选哪种方案，业务代码都零改动。
+**理由**：PRD 第 10 章要求本地加密。把存储与加密解耦后，更换加密方案时业务代码零改动——
+这一点已经被验证过一次：从内存占位实现换成加密文件实现时，
+`MoodGardenController` 与两个仓库一行都没有改。
 
-**当前实现**：`InMemoryLocalStore` —— 数据仅存活于进程内存，**不落盘、不加密**。
-这是骨架期的占位实现，替换前不得对外发布。
+**当前实现**：`EncryptedLocalStore` —— AES-256-GCM 加密后写入 App 私有目录，
+落盘采用「临时文件 + 原子重命名」。主密钥**不**写在密文文件里，
+而由 `SecureStorageMasterKeyProvider` 交给 Keychain / Keystore 托管
+（别名见 `AppConstants.encryptionKeyAlias`）。
+
+**失败时的取向**（两条都刻意反直觉，故记录在此）：
+
+- 解密失败（密钥变更 / 文件被篡改）→ 把原文件**改名隔离保留**
+  （`*.unreadable-<时间戳>`），而不是删除。宁可留下一个用户或许能人工恢复的文件，
+  也不静默销毁日记数据；同时不阻塞启动。
+- 装配失败（安全区不可用）→ 降级为 `InMemoryLocalStore`，并把降级原因回传 UI
+  显式展示。不让「存储不可用」变成「App 打不开」，也不让用户自己发现
+  「记了半天，重开全没了」。
+
+`InMemoryLocalStore` 仍然保留，用于测试与上述降级路径。
+
+### 2.8 密钥托管的平台差异：iOS 要 entitlement，macOS 走 legacy Keychain
+
+**决策**：`createSecureStorage()` 按平台构造不同的 `FlutterSecureStorage`——
+macOS 显式关掉 data protection keychain，iOS / Android 用默认配置。
+
+**理由**：`flutter_secure_storage_darwin` 在 Apple 平台都走 Keychain，但
+**entitlement 要求不同**，而且它的失败方式是最坏的一种：
+
+> 缺 `keychain-access-groups` 时，密钥会「看起来写成功、实际没写进去」。
+> 于是本次运行一切正常，**下次启动却解不开旧密文**。
+
+因此两端的处理必须分开：
+
+| 平台 | 做法 | 原因 |
+| --- | --- | --- |
+| iOS | `Runner/DebugProfile.entitlements` 与 `Release.entitlements` 加 `keychain-access-groups`，并用 `CODE_SIGN_ENTITLEMENTS` 接进三处构建配置 | 这是插件的硬性要求；该 entitlement 随 provisioning profile 生效 |
+| macOS | 用 `MacOsOptions(usesDataProtectionKeychain: false)` 回退到 legacy Keychain | 加同一个 entitlement 需要 provisioning profile，会让打出来的 `.app` 只能在构建它的机器上启动；本项目不需要 Keychain Sharing（无 App Group） |
+
+**这个缺口是桌面实测发现的**：iOS 工程此前根本没有 entitlements 文件，
+也没有 `CODE_SIGN_ENTITLEMENTS` 配置——真机上会静默丢密钥。
+纯代码审查与单元测试都发现不了它，因为它是工程配置而非 Dart 逻辑。
+
+> ⚠️ macOS 上的遗留现象：本机构建是 ad-hoc 签名且未设 Team
+> （`TeamIdentifier=not set`），每次重建代码身份都变，
+> legacy Keychain 会因此弹出系统授权框。这是桌面签名问题，
+> **不影响 iOS**（始终以 team 签名 + data protection keychain）。
+
+### 2.9 图片单独成文件，但用同一套信封
+
+**决策**：图片不进那个键值 JSON，而是每张一个文件；加密复用同一个
+[SecretEnvelope]（AES-256-GCM + 同一把主密钥）。
+
+**理由**：如果图片塞进键值表，base64 会把每条记录撑大几十倍，
+而且**每写一个字都要重新加密整张图**——记录一段 20 字的文字却要付出
+几 MB 的加密开销。拆开之后，文字存储只关心文字。
+
+**一致的承诺**：两种存储共用一套信封格式与一把密钥，
+所以「磁盘上的数据长什么样」只有一个答案，安全审计不用看两处。
+
+**燃烧时的顺序是刻意的**：先删图片密文，再落盘「已燃烧」的记录。
+两种失败各会发生一次，代价并不对等：
+
+- 先删后写失败 → 草稿里留下几个加载不出来的图片引用（界面小瑕疵）；
+- 先写后删失败 → 磁盘上永久残留图片密文，而记录已显示「已转化为养分」
+  （隐私承诺被静默破坏）。
+
+后者是产品最核心的承诺，所以把删除放在前面。
+
+### 2.10 色彩对比度是算出来的，不是看出来的
+
+**决策**：把 `warmApricotDeep` / `mistyRoseDeep` / `sageGreenDeep` / `ash`
+四个色的取值按 WCAG 相对亮度公式反推，并用 9 条断言锁住。
+
+**理由**：这几个色当初是照美观挑的，实测在各自的浅色底上只有
+**2.4 ~ 2.8:1**，连 AA 要求（4.5:1）的一半多都不到——
+「已转化为养分」那句封条只有 2.42:1，而它恰恰是这个产品最需要被看清的一句话。
+
+**代价**：强调色整体变深，视觉上比之前「重」一点。这是无障碍的必然取舍：
+小字要读得清，层次就只能靠字号与字重去拉，不能再靠把颜色调淡。
+
+**例外**：`inkTertiary` 刻意保留在 2.3:1，只用于禁用态与纯装饰——
+如果它也变得清晰可读，「禁用」看起来就会像「可用」。测试里有一条断言
+专门守住这个例外，提醒后来者不要拿它去写需要读的内容。
+
+### 2.11 先出画面，再装配存储
+
+**决策**：`main()` 先 `runApp` 一个静态过渡页，存储装配完成后再 `runApp` 真正的应用。
+
+**理由**：装配要异步向系统安全区取主密钥。正常情况下只要几十毫秒，但它**可能被阻塞**
+——macOS 上换签名后访问钥匙串会弹系统授权框等待用户输入。若把 `runApp` 放在
+`await` 之后，这段等待就是一片纯黑窗口，用户完全不知道发生了什么。
+
+**这个问题同样是桌面实测撞到的**，不是推测。代价是快速路径下过渡页会闪一下；
+收益是任何慢路径下用户至少有东西可看，而不是面对黑屏。
 
 ---
 
@@ -145,8 +234,12 @@
 | 领域模型 | `test/unit/flower_test.dart` | 生长阶段推导、养分加速、花种目录 |
 | 领域模型 | `test/unit/garden_state_test.dart` | 养分进度、收集进度、隐藏款解锁 |
 | 数据层 | `test/unit/codec_test.dart` | 序列化往返、**篡改后仍擦除**、损坏数据容错 |
+| 数据层 | `test/unit/encrypted_local_store_test.dart` | **密文落盘、重启后仍可解密、磁盘上无明文、篡改检测、密钥变更时隔离保留、原子写入** |
 | 业务编排 | `test/unit/mood_garden_controller_test.dart` | 三套机制端到端、连续天数规则 |
 | 表现层 | `test/widget/app_smoke_test.dart` | 四个 Tab 渲染、页面导航、关键文案 |
+| 表现层 | `test/widget/text_scale_test.dart` | **系统字体放大 2× 时全部页面零溢出**（PRD 第 10 章无障碍） |
+| 表现层 | `test/widget/codex_collection_test.dart` | **图鉴顶部「已收集」与卡片剪影判定口径一致** |
+| 真实后端 | `integration_test/desktop_storage_test.dart` | **在 macOS 桌面端跑真实 `path_provider` 沙盒目录 + 真实 Keychain**：加密落盘、无明文、重建实例后仍能解密 |
 
 **刻意不测的**：保存流程的完整 UI 链路（含动画与对话框）。
 原因是它会把测试与 `FakeAsync` 时钟、动画时长耦合在一起，非常脆弱；
@@ -157,13 +250,28 @@
 
 ## 5. 后续接入指引
 
-### 接入真实的加密持久化
+### 本地加密持久化（✅ 已完成）
 
-1. 实现 `LocalStore` 接口（例如 `EncryptedFileStore`）；
-2. 密钥交由 iOS Keychain / Android Keystore 托管
-   （别名见 `AppConstants.encryptionKeyAlias`）；
-3. 在 `main.dart` 中替换 `InMemoryLocalStore` 的实例化；
-4. 业务代码无需任何改动。
+1. ~~实现 `LocalStore` 接口~~ → `EncryptedLocalStore`
+   （AES-256-GCM + 临时文件原子替换）；
+2. ~~密钥交由 iOS Keychain / Android Keystore 托管~~
+   → `SecureStorageMasterKeyProvider`，别名 `AppConstants.encryptionKeyAlias`；
+3. ~~在 `main.dart` 中替换 `InMemoryLocalStore` 的实例化~~
+   → `bootstrapLocalStore()`，内含失败降级；
+4. ~~业务代码无需任何改动~~ —— 实际改动量为零：
+   `MoodGardenController` 与两个仓库实现均未修改。
+
+**遗留（图片输入的前置条件）**：图片文件本身尚未纳入加密存储，因此图片输入仍未接入。
+方案确定后除了给图片加密，还要在 `UnhappyEntry.burn()` 的调用链上一并删除
+对应密文文件——否则「原始内容不可恢复」这条承诺在图片上就存在漏洞。
+
+### 三端构建状态
+
+| 平台 | 状态 | 说明 |
+| --- | --- | --- |
+| Android | ✅ 已产出 release APK | 见 `docs/ACCEPTANCE.md`；release 仍用 debug 签名 |
+| iOS | ✅ 可编译（`flutter build ios --no-codesign`） | CocoaPods 集成与 entitlements 均已接好；**未在真机验证**（模拟器子系统在本机不可用） |
+| macOS | ✅ 可构建并运行 | 用于桌面实测；非 PRD 目标平台 |
 
 ### 接入图片输入
 
