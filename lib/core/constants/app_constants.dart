@@ -21,7 +21,7 @@ abstract final class AppConstants {
   ///
   /// ⚠️ 必须与 `pubspec.yaml` 的 `version:` 保持一致：Dart 无法在编译期读取
   /// pubspec，只能手工同步。发版前请一并核对这两处。
-  static const String appVersion = '0.3.0';
+  static const String appVersion = '0.4.0';
 
   /// 产品心智的完整表述（PRD 2.2）。
   static const String valueProposition = '开心的事被温柔地收藏，不开心的事被温柔地转化';
